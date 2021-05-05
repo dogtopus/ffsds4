@@ -1,0 +1,22 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+functionfs = "*"
+pycryptodomex = "*"
+
+[dev-packages]
+pylint = "*"
+rope = "*"
+pyinstaller = "*"
+
+[requires]
+python_version = "3.9"
+
+[scripts]
+start = "./start.py"
+test = "python test.py"
+package = "pyinstaller --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' start.py"
+package-onefile = "pyinstaller -n ffsds4 --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' start.py"
