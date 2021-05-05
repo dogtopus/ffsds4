@@ -98,8 +98,12 @@ class DS4Function(functionfs.HIDFunction):
         with open(ds4key_path, 'rb') as f:
             ds4key = ds4.DS4Key(f)
         self.tracker = ds4.DS4StateTracker(ds4key)
-        self.console = console.Console(self.tracker)
+        self.console = console.Console(self)
+        self.connected = threading.Event()
+        self.connected.clear()
         self.console_task = threading.Thread(target=self.console.cmdloop)
+        logger.info('Gadget initialized. Dropping console.')
+        self.console_task.start()
 
     def getEndpointClass(self, is_in, descriptor):
         """
@@ -136,13 +140,17 @@ class DS4Function(functionfs.HIDFunction):
         We are plugged to a host, it has enumerated and enabled us, start
         sending reports.
         """
-        logger.info('onEnable called')
         super().onEnable()
         self.getEndpoint(1).submit(
             (self.tracker.input_report_buf.copy(), ),
         )
-        logger.info('Gadget initialized. Dropping console.')
-        self.console_task.start()
+        self.connected.set()
+        logger.info('USB device connected.')
+
+    def onDisable(self):
+        super().onDisable()
+        self.connected.clear()
+        logger.info('USB device disconnected.')
 
 
 def create_gadget_instance(args):
