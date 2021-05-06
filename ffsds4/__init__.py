@@ -97,7 +97,15 @@ class DS4Function(functionfs.HIDFunction):
         # Load DS4Key
         with open(ds4key_path, 'rb') as f:
             ds4key = ds4.DS4Key(f)
-        self.tracker = ds4.DS4StateTracker(ds4key)
+
+        self.features = ds4.FeatureConfiguration(
+            enable_touchpad=True,
+            enable_rumble=True,
+            enable_led=True,
+            enable_imu=True
+        )
+
+        self.tracker = ds4.DS4StateTracker(ds4key, self.features)
         self.console = console.Console(self)
         self.connected = threading.Event()
         self.connected.clear()
@@ -128,6 +136,8 @@ class DS4Function(functionfs.HIDFunction):
                 self.tracker.get_auth_status(self.ep0)
             elif report_id == ds4.ReportType.get_response:
                 self.tracker.get_response(self.ep0)
+            elif report_id == ds4.ReportType.get_feature_configuration:
+                self.tracker.get_feature_configuration(self.ep0)
 
     def setHIDReport(self, value, index, length):
         report_type, report_id = ((value >> 8) & 0xff), (value & 0xff)

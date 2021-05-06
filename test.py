@@ -100,6 +100,21 @@ ff
 000000
 ''')
 
+FEATURE_CONFIG_ALL_ENABLED = bytes.fromhex('''
+03
+2127
+04
+4f
+00
+2c 56
+a00f 3d00 e803
+0100 0020
+0d0d
+00000000
+00 00 00
+000000000000000000000000000000000000000000
+''')
+
 class DS4Test(unittest.TestCase):
     def test_ds4key_load(self):
         ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
@@ -132,7 +147,8 @@ class DS4Test(unittest.TestCase):
         ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
         ds4key = ds4.DS4Key(ds4key_io)
         ds4id_expected = ds4key_io.getvalue()[:0x310]
-        tracker = ds4.DS4StateTracker(ds4key)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
         challenge = io.BytesIO(b'\x00' * 256)
         page = 0
@@ -234,7 +250,8 @@ class DS4Test(unittest.TestCase):
     def test_tracker_edit_context(self):
         ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
         ds4key = ds4.DS4Key(ds4key_io)
-        tracker = ds4.DS4StateTracker(ds4key)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
         with tracker.start_modify_report() as report:
             report: ds4.InputReport
             report.set_button(ds4.ButtonType.ps, True)
@@ -246,6 +263,16 @@ class DS4Test(unittest.TestCase):
         expected = '080001'
         self.assertEqual(actual, expected)
         self.assertEqual(actual_next, expected)
+
+    def test_feature_config_all_enabled(self):
+        features = ds4.FeatureConfiguration(
+            enable_touchpad=True,
+            enable_imu=True,
+            enable_led=True,
+            enable_rumble=True,
+        )
+        actual = bytes(features).hex()
+        self.assertEqual(actual, FEATURE_CONFIG_ALL_ENABLED.hex())
 
 if __name__ == '__main__':
     unittest.main()

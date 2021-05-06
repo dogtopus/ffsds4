@@ -8,7 +8,7 @@ import itertools
 import io
 import logging
 import threading
-from typing import Tuple, IO, Iterator
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -21,6 +21,7 @@ logger = logging.getLogger('ffsds4.ds4')
 
 class ReportType(enum.IntEnum):
     in_report = 0x01
+    get_feature_configuration = 0x03
     out_feedback = 0x05
     set_challenge = 0xf0
     get_response = 0xf1
@@ -58,6 +59,9 @@ class DPadPosition(enum.IntFlag):
 
 
 class TouchFrame(ctypes.LittleEndianStructure):
+    seq: int
+    pos: Sequence[int]
+
     _fields_ = (
         ('seq', ctypes.c_uint8),
         ('pos', ctypes.c_uint32 * 2),
@@ -66,6 +70,22 @@ class TouchFrame(ctypes.LittleEndianStructure):
 
 
 class InputReport(ctypes.LittleEndianStructure):
+    type: int
+    sticks: ByteString
+    buttons: ByteString
+    triggers: ByteString
+    sensor_timestamp: int
+    battery: int
+    u13: int
+    gyro: Sequence[int]
+    accel: Sequence[int]
+    u26: int
+    state_ext: int
+    u31: int
+    tp_available_frame: int
+    tp_frames: Sequence[TouchFrame]
+    padding: ByteString
+
     _fields_ = (
         ('type', ctypes.c_uint8),
         ('sticks', ctypes.c_uint8 * 4),
@@ -134,6 +154,16 @@ class InputReport(ctypes.LittleEndianStructure):
 
 
 class FeedbackReport(ctypes.LittleEndianStructure):
+    type: int
+    flags: int
+    padding1: ByteString
+    rumble_right: int
+    rumble_left: int
+    led_color: ByteString
+    led_flash_on: int
+    led_flash_off: int
+    padding: ByteString
+
     _fields_ = (
         ('type', ctypes.c_uint8),
         ('flags', ctypes.c_uint8),
@@ -148,6 +178,138 @@ class FeedbackReport(ctypes.LittleEndianStructure):
     _pack_ = True
 
     # TODO feedback related
+
+
+# Mostly educated guesses.
+class IMUParameters(ctypes.LittleEndianStructure):
+    gyro_range: int
+    gyro_res_per_deg_s_denom: int
+    gyro_res_per_deg_s_num: int
+    accel_range: int
+    acc_res_per_g: int
+
+    _fields_ = (
+        ('gyro_range', ctypes.c_uint16),
+        ('gyro_res_per_deg_s_denom', ctypes.c_uint16),
+        ('gyro_res_per_deg_s_num', ctypes.c_uint16),
+        ('accel_range', ctypes.c_uint16),
+        ('acc_res_per_g', ctypes.c_uint16),
+    )
+    _pack_ = True
+
+
+class ControllerType(enum.IntEnum):
+    main_controller = 0x00
+    guitar = 0x01
+    steering_wheel = 0x06
+
+
+class ControllerFeature(enum.IntFlag):
+    unk_bit0 = 1
+    motion = 1 << 1
+    feedback_led = 1 << 2
+    rumble = 1 << 3
+    unk_bit4 = 1 << 4
+    unk_bit5 = 1 << 5
+    touchpad = 1 << 6
+    unk_bit7 = 1 << 7
+
+
+class FeatureConfiguration(ctypes.LittleEndianStructure):
+    type: int
+    magic_0x2721: int
+    u3: int
+    features: Union[int, ControllerFeature]
+    controller_type: Union[int, ControllerType]
+    touchpad_param: ByteString
+    imu_param: IMUParameters
+    magic_0x0d0d: int
+    u20: ByteString
+    wheel_param: ByteString
+    u27: ByteString
+
+    _fields_ = (
+        ('type', ctypes.c_uint8),
+        ('magic_0x2721', ctypes.c_uint16),
+        ('u3', ctypes.c_uint8),
+        ('features', ctypes.c_uint8),
+        ('controller_type', ctypes.c_uint8),
+        ('touchpad_param', ctypes.c_uint8 * 2),
+        ('imu_param', IMUParameters),
+        ('magic_0x0d0d', ctypes.c_uint16),
+        ('u20', ctypes.c_uint8 * 4),
+        ('wheel_param', ctypes.c_uint8 * 3),
+        ('u27', ctypes.c_uint8 * 21),
+    )
+    _pack_ = True
+
+    def __init__(self,
+                 enable_touchpad=False,
+                 enable_imu=False,
+                 enable_led=False,
+                 enable_rumble=False,
+                 ctypes_args=[],
+                 ctypes_kwargs={}):
+        self.features = 0
+        actual_kwargs = dict(
+            type=ReportType.get_feature_configuration,
+            u3=0x04,
+            # This seems to be always enabled
+            features=ControllerFeature.unk_bit0,
+            # TODO how to properly break this out
+            controller_type=ControllerType.main_controller,
+            magic_0x2721=0x2721,
+            magic_0x0d0d=0x0d0d,
+        )
+        actual_kwargs.update(ctypes_kwargs)
+        super().__init__(*ctypes_args, **actual_kwargs)
+
+        self.features |= ControllerFeature.unk_bit0
+        self.enable_touchpad(enable_touchpad)
+        self.enable_imu(enable_imu)
+        self.enable_led(enable_led)
+        self.enable_rumble(enable_rumble)
+
+    def enable_touchpad(self, enabled: bool):
+        if enabled:
+            self.features |= ControllerFeature.touchpad
+            self.touchpad_param[0] = 0x2c
+            self.touchpad_param[1] = 0x56
+        else:
+            self.features &= (~ControllerFeature.touchpad) & 0xff
+            self.touchpad_param[0] = 0x0
+            self.touchpad_param[1] = 0x0
+
+    def enable_imu(self, enabled: bool):
+        if enabled:
+            self.features |= ControllerFeature.motion
+            self.imu_param.gyro_range = 4000
+            self.imu_param.gyro_res_per_deg_s_denom = 61
+            self.imu_param.gyro_res_per_deg_s_num = 1000
+            self.imu_param.accel_range = 1
+            self.imu_param.acc_res_per_g = 8192
+        else:
+            self.features &= (~ControllerFeature.motion) & 0xff
+            self.imu_param.gyro_range = 0
+            self.imu_param.gyro_res_per_deg_s_denom = 0
+            self.imu_param.gyro_res_per_deg_s_num = 0
+            self.imu_param.accel_range = 0
+            self.imu_param.acc_res_per_g = 0
+
+    def enable_led(self, enabled: bool):
+        if enabled:
+            self.features |= ControllerFeature.feedback_led
+        else:
+            self.features &= (~ControllerFeature.feedback_led) & 0xff
+
+    def enable_rumble(self, enabled: bool):
+        if enabled:
+            if self.features & ControllerFeature.feedback_led == 0:
+                logger.warning('Rumble implies LED report but it is not enabled. Enabling it.')
+                self.features |= ControllerFeature.feedback_led
+            self.features |= ControllerFeature.rumble
+        else:
+            self.features &= (~ControllerFeature.rumble) & 0xff
 
 
 class AuthPageSizeReport(ctypes.LittleEndianStructure):
@@ -183,8 +345,6 @@ class AuthStatusReport(ctypes.LittleEndianStructure):
     )
     _pack = True
 
-AUTH_REQ_SIZE = 0x100
-AUTH_RESP_SIZE = 0x410
 
 class DS4IdentityBlock(ctypes.LittleEndianStructure):
     _pack_ = 1
@@ -193,6 +353,7 @@ class DS4IdentityBlock(ctypes.LittleEndianStructure):
         ('modulus', ctypes.c_uint8 * 0x100),
         ('exponent', ctypes.c_uint8 * 0x100),
     )
+
 
 class DS4PrivateKeyBlock(ctypes.LittleEndianStructure):
     _pack_ = 1
@@ -204,12 +365,14 @@ class DS4PrivateKeyBlock(ctypes.LittleEndianStructure):
         ('pq', ctypes.c_uint8 * 0x80),
     )
 
+
 class DS4SignedIdentityBlock(ctypes.LittleEndianStructure):
     _pack_ = 1
     _fields_ = (
         ('identity', DS4IdentityBlock),
         ('sig_identity', ctypes.c_uint8 * 0x100),
     )
+
 
 class DS4FullKeyBlock(ctypes.LittleEndianStructure):
     _pack_ = 1
@@ -219,12 +382,17 @@ class DS4FullKeyBlock(ctypes.LittleEndianStructure):
         ('private_key', DS4PrivateKeyBlock),
     )
 
+
 class DS4Response(ctypes.LittleEndianStructure):
     _pack_ = 1
     _fields_ = (
         ('sig', ctypes.c_uint8 * 0x100),
         ('signed_identity', DS4SignedIdentityBlock),
     )
+
+
+AUTH_REQ_SIZE = 0x100
+AUTH_RESP_SIZE = 0x410
 
 
 class DS4Key:
@@ -272,7 +440,7 @@ class DS4Key:
 
 
 class DS4StateTracker:
-    def __init__(self, ds4key: DS4Key):
+    def __init__(self, ds4key: DS4Key, features: FeatureConfiguration):
         # Initialize report A
         self._input_report_bufa = bytearray(InputReport())
         logger.debug('Buffer A: %s', hex(id(self._input_report_bufa)))
@@ -308,6 +476,9 @@ class DS4StateTracker:
         self._auth_req_max_page = -(-AUTH_REQ_SIZE // self._auth_req_size) - 1
         self._auth_resp_max_page = -(-AUTH_RESP_SIZE // self._auth_req_size) - 1
         self._auth_rsa_task = futures.ThreadPoolExecutor()
+
+        # Initialize feature configuration
+        self._features = features
 
     @property
     def auth_req_size(self):
@@ -364,6 +535,9 @@ class DS4StateTracker:
             logger.error('Wrong size for feedback report. Ignored')
             return
         self.feedback_report = FeedbackReport.from_buffer_copy(data)
+
+    def get_feature_configuration(self, ep0: io.FileIO):
+        ep0.write(self._features)
 
     def prepare_challenge(self):
         try:
