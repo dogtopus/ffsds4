@@ -8,7 +8,7 @@ import threading
 import os
 import signal
 from typing import Iterator, TYPE_CHECKING
-from . import ds4
+from . import ds4, sequencer
 
 if TYPE_CHECKING:
     from . import DS4Function
@@ -23,6 +23,8 @@ class Console(cmd.Cmd):
         super().__init__(*args, **kwargs)
         self._function = function
         self._tracker = function.tracker
+        self._sequencer = sequencer.Sequencer(self._tracker)
+        self._sequencer.start()
 
     def _wait_for_connect(self):
         if self._function.connected.wait(1):
@@ -32,15 +34,14 @@ class Console(cmd.Cmd):
             return False
 
     def do_exit(self, _arg):
+        self._sequencer.shutdown()
         logger.debug('Sending SIGINT to ourselves...')
         os.kill(os.getpid(), signal.SIGINT)
         return True
 
     def do_presstest(self, _arg):
         if self._wait_for_connect():
-            with self._tracker.start_modify_report() as report:
-                report: ds4.InputReport
-                report.set_button(ds4.ButtonType.ps, True)
+            self._sequencer.queue_press_buttons({ ds4.ButtonType.ps })
 
     def do_connected(self, _arg):
         print('Connected.' if self._function.connected.is_set() else 'Disconnected.')
