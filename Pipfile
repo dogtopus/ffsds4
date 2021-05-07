@@ -17,6 +17,8 @@ python_version = "3.9"
 
 [scripts]
 start = "./start.py"
+start-with-sudo = "sudo ./start.py"
+# Due to how pipenv passes parameters, su is not supported at this moment.
 test = "python test.py"
 package = "pyinstaller --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' start.py"
 package-onefile = "pyinstaller -n ffsds4 --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' --onefile start.py"
