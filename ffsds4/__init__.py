@@ -26,6 +26,7 @@ import functionfs
 import importlib.resources
 import logging
 import threading
+import os
 import sys
 from . import descriptors, console
 from functionfs.gadget import (
@@ -82,7 +83,7 @@ class HIDOUTEndpoint(functionfs.EndpointOUTFile):
 
 class DS4Function(functionfs.HIDFunction):
     """
-    A simple mouse device.
+    Third party PS4 controller function.
     """
     def __init__(self, ds4key_path, **kw):
         super().__init__(
@@ -173,7 +174,7 @@ def create_gadget_instance(args):
                     'function_list': [
                         functools.partial(
                             ConfigFunctionFFSSubprocess,
-                            getFunction=functools.partial(DS4Function, args.ds4key)
+                            getFunction=functools.partial(DS4Function, os.path.abspath(args.ds4key))
                         ),
                     ],
                     'MaxPower': 500,
