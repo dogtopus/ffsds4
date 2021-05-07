@@ -504,6 +504,8 @@ class DS4StateTracker:
 
     def auth_reset(self):
         self._auth_status = 0x10
+        self._auth_req_page = 0
+        self._auth_resp_page = 0
         self._nonce.seek(0)
         self._response.seek(0)
         self._nonce.truncate(0)
@@ -581,10 +583,10 @@ class DS4StateTracker:
 
     def get_response(self, ep0: io.FileIO):
         buf = AuthReport(type=ReportType.get_response)
-        data = self._response.read(self._auth_resp_size)
         buf.seq = self._auth_seq
         buf.page = self._auth_resp_page
-        ctypes.memmove(buf.data, data, min(AuthReport.data.size, len(data)))
+        if self._response.readinto(buf.data) == 0:
+            logger.warning('Attempt to read outside of the auth response buffer.')
         if self._auth_resp_page == self._auth_resp_max_page:
             self.auth_reset()
         ep0.write(buf)
