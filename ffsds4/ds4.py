@@ -8,7 +8,7 @@ import itertools
 import io
 import logging
 import threading
-from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -56,6 +56,13 @@ class DPadPosition(enum.IntFlag):
     sw = 5
     w = 6
     nw = 7
+
+
+InputTargetType = Union[
+    Type[ButtonType],
+    Type[DPadPosition],
+    str,
+]
 
 
 class TouchFrame(ctypes.LittleEndianStructure):
