@@ -1,19 +1,24 @@
 #!/usr/bin/env python
-# This file is part of python-functionfs
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This file is part of FFSDS4
+# Copyright (C) 2021-  dogtopus
+#
+# Based on python-functionfs HID example by Vincent Pelletier
 # Copyright (C) 2018-2020  Vincent Pelletier <plr.vincent@gmail.com>
 #
-# python-functionfs is free software: you can redistribute it and/or modify
+# FFSDS4 is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# python-functionfs is distributed in the hope that it will be useful,
+# FFSDS4 is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with python-functionfs.  If not, see <http://www.gnu.org/licenses/>.
+# along with FFSDS4.  If not, see <http://www.gnu.org/licenses/>.
 
 """
 Third party PS4 controller emulator based on python-functionfs and its HID example.
@@ -44,8 +49,6 @@ REPORT_DESCRIPTOR = importlib.resources.read_binary(descriptors, 'ds43p.desc.bin
 class HIDINEndpoint(functionfs.EndpointINFile):
     """
     Customise what happens on IN transfer completion.
-    In a real device, here may be where you would sample and clear the current
-    movement deltas, and construct a new HID report to send to the host.
     """
     def __init__(self, controller_instance: "Controller", *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,6 +70,9 @@ class HIDINEndpoint(functionfs.EndpointINFile):
 
 
 class HIDOUTEndpoint(functionfs.EndpointOUTFile):
+    """
+    Customise what happens on OUT transfer completion.
+    """
     def __init__(self, controller_instance: "Controller", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._controller_instance = controller_instance
@@ -116,8 +122,8 @@ class DS4Function(functionfs.HIDFunction):
 
     def getEndpointClass(self, is_in, descriptor):
         """
-        Tell HIDFunction that we want it to use our custom IN endpoint class
-        for our only IN endpoint.
+        Tell HIDFunction that we want it to use our custom endpoint classes
+        for our endpoints.
         """
         if is_in:
             return functools.partial(HIDINEndpoint, self)
@@ -126,8 +132,7 @@ class DS4Function(functionfs.HIDFunction):
 
     def getHIDReport(self, value, index, length):
         """
-        In case the host does not read our IN endpoint but instead uses the
-        control endpoint to request reports.
+        Handle GetReport.
         """
         report_type, report_id = ((value >> 8) & 0xff), (value & 0xff)
         if report_type == 0x03:
@@ -141,6 +146,9 @@ class DS4Function(functionfs.HIDFunction):
                 self.tracker.get_feature_configuration(self.ep0)
 
     def setHIDReport(self, value, index, length):
+        """
+        Handle SetReport.
+        """
         report_type, report_id = ((value >> 8) & 0xff), (value & 0xff)
         if report_type == 0x03:
             if report_id == ds4.ReportType.set_challenge:
@@ -159,6 +167,9 @@ class DS4Function(functionfs.HIDFunction):
         logger.info('USB device connected.')
 
     def onDisable(self):
+        """
+        Handle disconnect event.
+        """
         super().onDisable()
         self.connected.clear()
         logger.info('USB device disconnected.')

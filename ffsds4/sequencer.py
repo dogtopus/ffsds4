@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This file is part of FFSDS4
+# Copyright (C) 2021-  dogtopus
+
 import enum
 import threading
 import queue
