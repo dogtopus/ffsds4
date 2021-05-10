@@ -21,7 +21,7 @@ To create an executable for easy transport and faster startup, use:
 pipenv install --dev # after checkout
 
 # Make a standalone package
-pipenv run package-onefile
+pipenv run package
 
 # Make a single file executable
 pipenv run package-onefile
