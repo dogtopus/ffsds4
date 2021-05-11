@@ -11,6 +11,7 @@ pycryptodomex = "*"
 pylint = "*"
 rope = "*"
 pyinstaller = "*"
+mypy = "*"
 
 [requires]
 python_version = "3.9"

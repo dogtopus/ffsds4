@@ -50,7 +50,7 @@ class HIDINEndpoint(functionfs.EndpointINFile):
     """
     Customise what happens on IN transfer completion.
     """
-    def __init__(self, controller_instance: "Controller", *args, **kwargs):
+    def __init__(self, controller_instance: "DS4Function", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._controller_instance = controller_instance
 
@@ -73,7 +73,7 @@ class HIDOUTEndpoint(functionfs.EndpointOUTFile):
     """
     Customise what happens on OUT transfer completion.
     """
-    def __init__(self, controller_instance: "Controller", *args, **kwargs):
+    def __init__(self, controller_instance: "DS4Function", *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._controller_instance = controller_instance
 

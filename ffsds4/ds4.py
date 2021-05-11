@@ -12,7 +12,7 @@ import itertools
 import io
 import logging
 import threading
-from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -71,7 +71,7 @@ InputTargetType = Union[
 
 class TouchFrame(ctypes.LittleEndianStructure):
     seq: int
-    pos: Sequence[int]
+    pos: MutableSequence[int]
 
     _fields_ = (
         ('seq', ctypes.c_uint8),
@@ -82,20 +82,20 @@ class TouchFrame(ctypes.LittleEndianStructure):
 
 class InputReport(ctypes.LittleEndianStructure):
     type: int
-    sticks: ByteString
-    buttons: ByteString
-    triggers: ByteString
+    sticks: MutableSequence[int]
+    buttons: MutableSequence[int]
+    triggers: MutableSequence[int]
     sensor_timestamp: int
     battery: int
     u13: int
-    gyro: Sequence[int]
-    accel: Sequence[int]
+    gyro: MutableSequence[int]
+    accel: MutableSequence[int]
     u26: int
     state_ext: int
     u31: int
     tp_available_frame: int
     tp_frames: Sequence[TouchFrame]
-    padding: ByteString
+    padding: MutableSequence[int]
 
     _fields_ = (
         ('type', ctypes.c_uint8),
@@ -128,7 +128,7 @@ class InputReport(ctypes.LittleEndianStructure):
         self.set_dpad(DPadPosition.neutral)
         self.clear_touchpad()
 
-    def set_button(self, button: ButtonType, pressed: bool):
+    def set_button(self, button: Union[int, ButtonType], pressed: bool):
         button = ButtonType(button)
         button = int(button) + 4
         byte_offset = ((button >> 3) & 3)
@@ -167,13 +167,13 @@ class InputReport(ctypes.LittleEndianStructure):
 class FeedbackReport(ctypes.LittleEndianStructure):
     type: int
     flags: int
-    padding1: ByteString
+    padding1: MutableSequence[int]
     rumble_right: int
     rumble_left: int
-    led_color: ByteString
+    led_color: MutableSequence[int]
     led_flash_on: int
     led_flash_off: int
-    padding: ByteString
+    padding: MutableSequence[int]
 
     _fields_ = (
         ('type', ctypes.c_uint8),
@@ -232,12 +232,12 @@ class FeatureConfiguration(ctypes.LittleEndianStructure):
     u3: int
     features: Union[int, ControllerFeature]
     controller_type: Union[int, ControllerType]
-    touchpad_param: ByteString
+    touchpad_param: MutableSequence[int]
     imu_param: IMUParameters
     magic_0x0d0d: int
-    u20: ByteString
-    wheel_param: ByteString
-    u27: ByteString
+    u20: MutableSequence[int]
+    wheel_param: MutableSequence[int]
+    u27: MutableSequence[int]
 
     _fields_ = (
         ('type', ctypes.c_uint8),
@@ -264,18 +264,19 @@ class FeatureConfiguration(ctypes.LittleEndianStructure):
         self.features = 0
         actual_kwargs = dict(
             type=ReportType.get_feature_configuration,
-            u3=0x04,
-            # This seems to be always enabled
-            features=ControllerFeature.unk_bit0,
-            # TODO how to properly break this out
-            controller_type=ControllerType.main_controller,
             magic_0x2721=0x2721,
             magic_0x0d0d=0x0d0d,
         )
         actual_kwargs.update(ctypes_kwargs)
         super().__init__(*ctypes_args, **actual_kwargs)
 
+        # This seems to be (almost) always enabled
         self.features |= ControllerFeature.unk_bit0
+        # Default controller type is main controller or DS4 replacement
+        self.controller_type = ControllerType.main_controller
+        # This can be either 0x03 or 0x04 but most of them are 0x04
+        self.u3 = 0x04
+
         self.enable_touchpad(enable_touchpad)
         self.enable_imu(enable_imu)
         self.enable_led(enable_led)
@@ -409,7 +410,7 @@ AUTH_RESP_SIZE = 0x410
 class DS4Key:
     def __init__(self, ds4key_file: io.FileIO):
         ds4key = DS4FullKeyBlock()
-        actual = ds4key_file.readinto(ds4key)
+        actual = ds4key_file.readinto(ds4key) #type: ignore
         if actual != ctypes.sizeof(DS4FullKeyBlock):
             raise ValueError('DS4Key too small.')
 
@@ -421,14 +422,15 @@ class DS4Key:
         dq1 = bytes_to_long(bytes(ds4key.private_key.dq1))
         pq = bytes_to_long(bytes(ds4key.private_key.pq))
 
-        d = Integer(e).inverse((p-1) * (q-1))
-        pq_from_pq = Integer(q).inverse(p)
-        dp1_from_pq = Integer(d) % (p-1)
-        dq1_from_pq = Integer(d) % (q-1)
-        if Integer(pq) != pq_from_pq or Integer(dp1) != dp1_from_pq or Integer(dq1) != dq1_from_pq:
+        d = Integer(e).inverse((p-1) * (q-1)) #type: ignore[call-arg]
+        pq_from_pq = Integer(q).inverse(p) #type: ignore[call-arg]
+        dp1_from_pq = Integer(d) % (p-1) #type: ignore[call-arg]
+        dq1_from_pq = Integer(d) % (q-1) #type: ignore[call-arg]
+        if Integer(pq) != pq_from_pq or Integer(dp1) != dp1_from_pq or Integer(dq1) != dq1_from_pq: #type: ignore[call-arg]
             raise ValueError('Bad key block (CRT factors inconsistent with P and Q)')
 
-        key = RSA.construct((n, e, d, p, q), consistency_check=True)
+        # TODO broken type tagging in pycryptodome. Should we fix it upstream?
+        key = RSA.construct((n, e, d, p, q), consistency_check=True) #type: ignore[arg-type]
         fppub = SHA256.new(key.publickey().exportKey('DER')).hexdigest()
         fppriv = SHA256.new(key.exportKey('DER')).hexdigest()
 
@@ -550,7 +552,7 @@ class DS4StateTracker:
         self.feedback_report = FeedbackReport.from_buffer_copy(data)
 
     def get_feature_configuration(self, ep0: io.FileIO):
-        ep0.write(self._features)
+        ep0.write(self._features) #type: ignore[arg-type]
 
     def prepare_challenge(self):
         try:
@@ -567,11 +569,11 @@ class DS4StateTracker:
         buf = AuthPageSizeReport(type=ReportType.get_auth_page_size)
         buf.size_challenge = self.auth_req_size
         buf.size_response = self.auth_resp_size
-        ep0.write(buf)
+        ep0.write(buf) #type: ignore[arg-type]
 
     def set_challenge(self, ep0: io.FileIO):
         buf = AuthReport()
-        ep0.readinto(buf)
+        ep0.readinto(buf) #type: ignore[arg-type]
         if buf.type != int(ReportType.set_challenge):
             raise TypeError('Invalid request type for request set_challenge.')
         if buf.page != 0 and buf.seq != self._auth_seq:
@@ -590,7 +592,7 @@ class DS4StateTracker:
         buf = AuthStatusReport(type=ReportType.get_auth_status)
         buf.seq = self._auth_seq
         buf.status = self._auth_status
-        ep0.write(buf)
+        ep0.write(buf) #type: ignore[arg-type]
 
     def get_response(self, ep0: io.FileIO):
         buf = AuthReport(type=ReportType.get_response)
@@ -600,7 +602,7 @@ class DS4StateTracker:
             logger.warning('Attempt to read outside of the auth response buffer.')
         if self._auth_resp_page == self._auth_resp_max_page:
             self.auth_reset()
-        ep0.write(buf)
+        ep0.write(buf) #type: ignore[arg-type]
         if self._auth_status == 0x0:
             self._auth_resp_page += 1
 

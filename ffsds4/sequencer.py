@@ -9,11 +9,17 @@ import threading
 import queue
 import time
 import logging
-from typing import Sequence, Optional, Set, Tuple, Any
+from typing import Sequence, Optional, Set, Tuple, Any, Type, Union, Dict
 
 from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType
 
 logger = logging.getLogger('ffsds4.sequencer')
+
+
+InputTypeIdentifier = Union[
+    Tuple[Type[ButtonType], Union[ButtonType, int]],
+    # TODO add the rest
+]
 
 
 class ControllerEventType(enum.Enum):
@@ -39,6 +45,8 @@ class ControllerEvent:
         return self.next_
 
 class Sequencer:
+    _event_queue: queue.PriorityQueue[Tuple[float, ControllerEvent]]
+    _holding: Dict[InputTypeIdentifier, ControllerEvent]
     def __init__(self, tracker: DS4StateTracker):
         self._tracker = tracker
         self._event_queue = queue.PriorityQueue()
@@ -112,7 +120,6 @@ class Sequencer:
 
                     # Force the button into release state
                     with self._tracker.start_modify_report() as report:
-                        report: InputReport
                         report.set_button(button, False)
 
                     # New event chain
@@ -128,7 +135,6 @@ class Sequencer:
                 else:
                     # Press the button
                     with self._tracker.start_modify_report() as report:
-                        report: InputReport
                         report.set_button(button, True)
 
                     # Hold until hold_until seconds later and release
