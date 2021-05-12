@@ -76,7 +76,6 @@ class Sequencer:
                         continue
                     logger.debug('%d events collected', len(events))
                     with self._tracker.start_modify_report() as report:
-                        report: InputReport
                         for ev in events:
                             ev_on_type, ev_on_id = ev.target
                             if ev_on_type == ButtonType:
@@ -92,6 +91,9 @@ class Sequencer:
             logger.debug('Sequencer tick thread stopped.')
 
     def start(self):
+        '''
+        Start sequencer thread.
+        '''
         self._shutdown_flag.clear()
         try:
             self._tick_thread.start()
@@ -101,11 +103,20 @@ class Sequencer:
             self._tick_thread.start()
 
     def shutdown(self):
+        '''
+        Shut down sequencer thread.
+        '''
         logger.debug('Shutting down...')
         self._shutdown_flag.set()
         self._tick_thread.join()
 
     def queue_press_buttons(self, buttons: Set[ButtonType], hold: float = 0.05):
+        '''
+        Queue a timed button press event affecting one or more buttons.
+        Previous queued events on affected buttons will be cancelled and a
+        release event will be queued before the actual press and release
+        event.
+        '''
         start_time = time.perf_counter()
         hold_until = start_time + hold
         with self._mutex:
@@ -139,3 +150,19 @@ class Sequencer:
                     event = ControllerEvent(op=ControllerEventType.release, target=target)
                     self._holding[target] = event
                     self._event_queue.put((hold_until, event))
+
+    def hold_release_buttons(self, buttons: Set[ButtonType], release=False):
+        '''
+        Hold buttons indefinitely. Note that this will not generate a release
+        event for holding initiated by queue_press_buttons but will cancel
+        the event chain already in progress.
+        '''
+        with self._tracker.start_modify_report() as report, self._mutex:
+            for button in buttons:
+                target = (ButtonType, button)
+                if target in self._holding:
+                    # Cancel the ongoing event chain for this particular button
+                    self._holding[target].cancel()
+                    del self._holding[target]
+                report.set_button(button, not release)
+

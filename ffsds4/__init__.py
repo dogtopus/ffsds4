@@ -66,7 +66,7 @@ class HIDINEndpoint(functionfs.EndpointINFile):
         with self._controller_instance.tracker.input_report_lock:
             self._controller_instance.tracker.swap_buffer_nolock()
             self._controller_instance.tracker.sync_buffer_nolock()
-            return (self._controller_instance.tracker.input_report_submitting_buf.copy(), )
+            return (self._controller_instance.tracker.input_report_submitting_buf, )
 
 
 class HIDOUTEndpoint(functionfs.EndpointOUTFile):
@@ -161,7 +161,7 @@ class DS4Function(functionfs.HIDFunction):
         """
         super().onEnable()
         self.getEndpoint(1).submit(
-            (self.tracker.input_report_submitting_buf.copy(), ),
+            (self.tracker.input_report_submitting_buf, ),
         )
         self.connected.set()
         logger.info('USB device connected.')
