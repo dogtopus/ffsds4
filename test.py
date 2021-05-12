@@ -258,8 +258,8 @@ class DS4Test(unittest.TestCase):
         with tracker.input_report_lock:
             tracker.swap_buffer_nolock()
             tracker.sync_buffer_nolock()
-        actual = tracker.input_report_buf[5:8].hex()
-        actual_next = tracker.input_report_buf[5:8].hex()
+        actual = tracker.input_report_submitting_buf[5:8].hex()
+        actual_next = tracker.input_report_submitting_buf[5:8].hex()
         expected = '080001'
         self.assertEqual(actual, expected)
         self.assertEqual(actual_next, expected)

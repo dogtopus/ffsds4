@@ -16,10 +16,7 @@ from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType
 logger = logging.getLogger('ffsds4.sequencer')
 
 
-InputTypeIdentifier = Union[
-    Tuple[Type[ButtonType], Union[ButtonType, int]],
-    # TODO add the rest
-]
+InputTypeIdentifier = Tuple[InputTargetType, Any]
 
 
 class ControllerEventType(enum.Enum):
@@ -27,8 +24,9 @@ class ControllerEventType(enum.Enum):
     release = enum.auto()
 
 class ControllerEvent:
+    target: InputTypeIdentifier
     next_: Optional["ControllerEvent"]
-    def __init__(self, op: ControllerEventType, target: Tuple[InputTargetType, Any]):
+    def __init__(self, op: ControllerEventType, target: InputTypeIdentifier):
         self.op = op
         self.target = target
         self.cancelled = False

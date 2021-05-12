@@ -7,6 +7,7 @@
 import argparse
 import cmd
 import contextlib
+import functools
 import logging
 import functionfs.gadget
 import threading
@@ -34,6 +35,7 @@ def create_parser() -> argparse.ArgumentParser:
     return p
 
 def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
+    @functools.wraps(func)
     def _wrapper(self: 'Console', args: str) -> Optional[bool]:
         if self._function.connected.wait(1):
             return func(self, args)
@@ -44,6 +46,7 @@ def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
 
 
 def use_argparse(func: ConsoleArgparseDoMethod) -> ConsoleDoMethod:
+    @functools.wraps(func)
     def _wrapper(self: 'Console', args: str) -> Optional[bool]:
         try:
             parsed_args = self._parser.parse_args()

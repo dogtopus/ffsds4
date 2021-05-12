@@ -12,7 +12,7 @@ import itertools
 import io
 import logging
 import threading
-from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -408,7 +408,7 @@ AUTH_RESP_SIZE = 0x410
 
 
 class DS4Key:
-    def __init__(self, ds4key_file: io.FileIO):
+    def __init__(self, ds4key_file: io.FileIO) -> None:
         ds4key = DS4FullKeyBlock()
         actual = ds4key_file.readinto(ds4key) #type: ignore
         if actual != ctypes.sizeof(DS4FullKeyBlock):
@@ -442,7 +442,7 @@ class DS4Key:
 
         logger.info('DS4Key loaded fingerprint=%s, private_fingerprint=%s', fppub, fppriv)
 
-    def sign_challenge(self, challenge: bytes):
+    def sign_challenge(self, challenge: bytes) -> DS4Response:
         sha = SHA256.new(challenge)
         sig = self._pss.sign(sha)
 
@@ -452,8 +452,22 @@ class DS4Key:
         return buf
 
 
+# OK Java code
+# Also f*** all Python IDEs. Yes, all of them >(.
+class ReportModificationContext(ContextManager[InputReport]):
+    def __init__(self, tracker: "DS4StateTracker") -> None:
+        self._tracker = tracker
+
+    def __enter__(self) -> InputReport:
+        self._tracker.input_report_lock.acquire()
+        return self._tracker.input_report_writable
+
+    def __exit__(self, _exc_type, _exc_val, _exc_tb) -> None:
+        self._tracker.input_report_lock.release()
+
+
 class DS4StateTracker:
-    def __init__(self, ds4key: DS4Key, features: FeatureConfiguration):
+    def __init__(self, ds4key: DS4Key, features: FeatureConfiguration) -> None:
         # Initialize report A
         self._input_report_bufa = bytearray(InputReport())
         logger.debug('Buffer A: %s', hex(id(self._input_report_bufa)))
@@ -465,10 +479,10 @@ class DS4StateTracker:
         self._input_report_b = InputReport.from_buffer(self._input_report_bufb)
 
         # Set current sending and next report references
-        self.input_report = self._input_report_a
-        self._input_report_next = self._input_report_b
-        self.input_report_buf = self._input_report_bufa
-        self._input_report_next_buf = self._input_report_bufb
+        self._input_report_submitting = self._input_report_a
+        self._input_report_writable = self._input_report_b
+        self._input_report_submitting_buf = self._input_report_bufa
+        self._input_report_writable_buf = self._input_report_bufb
 
         # Create input report lock
         self.input_report_lock = threading.Lock()
@@ -476,7 +490,7 @@ class DS4StateTracker:
         # Create dummy feedback report
         self.feedback_report = FeedbackReport()
 
-        # Initiallize auth state tracker
+        # Initialize auth state tracker
         self._ds4key = ds4key
         self._nonce = io.BytesIO()
         self._response = io.BytesIO()
@@ -494,28 +508,44 @@ class DS4StateTracker:
         self._features = features
 
     @property
-    def auth_req_size(self):
+    def auth_req_size(self) -> int:
         return self._auth_req_size
 
     @auth_req_size.setter
-    def auth_req_size(self, val: int):
+    def auth_req_size(self, val: int) -> None:
         if val > AuthReport.data.size:
             raise ValueError('Data size too big')
         self._auth_req_size = val
         self._auth_req_max_page = -(-AUTH_REQ_SIZE // val) - 1
 
     @property
-    def auth_resp_size(self):
+    def auth_resp_size(self) -> int:
         return self._auth_resp_size
 
     @auth_resp_size.setter
-    def auth_resp_size(self, val):
+    def auth_resp_size(self, val) -> None:
         if val > AuthReport.data.size:
             raise ValueError('Data size too big')
         self._auth_resp_size = val
         self._auth_resp_max_page = -(-AUTH_RESP_SIZE // val) - 1
 
-    def auth_reset(self):
+    @property
+    def input_report_writable(self) -> InputReport:
+        return self._input_report_writable
+
+    @property
+    def input_report_submitting(self) -> InputReport:
+        return self._input_report_submitting
+
+    @property
+    def input_report_writable_buf(self) -> bytearray:
+        return self._input_report_writable_buf
+
+    @property
+    def input_report_submitting_buf(self) -> bytearray:
+        return self._input_report_submitting_buf
+
+    def auth_reset(self) -> None:
         self._auth_status = 0x10
         self._auth_req_page = 0
         self._auth_resp_page = 0
@@ -524,39 +554,36 @@ class DS4StateTracker:
         self._nonce.truncate(0)
         self._response.truncate(0)
 
-    def swap_buffer(self):
+    def swap_buffer(self) -> None:
         with self.input_report_lock:
             self.swap_buffer_nolock()
 
-    def swap_buffer_nolock(self):
-        self.input_report, self._input_report_next = self._input_report_next, self.input_report
-        self.input_report_buf, self._input_report_next_buf = self._input_report_next_buf, self.input_report_buf
+    def swap_buffer_nolock(self) -> None:
+        self._input_report_submitting, self._input_report_writable = self._input_report_writable, self._input_report_submitting
+        self._input_report_submitting_buf, self._input_report_writable_buf = self._input_report_writable_buf, self._input_report_submitting_buf
 
-    def sync_buffer(self):
+    def sync_buffer(self) -> None:
         with self.input_report_lock:
             self.sync_buffer_nolock()
 
-    def sync_buffer_nolock(self):
-        #ctypes.memmove(self._input_report_next, self.input_report, ctypes.sizeof(InputReport))
-        ctypes.pointer(self._input_report_next)[0] = self.input_report
+    def sync_buffer_nolock(self) -> None:
+        ctypes.pointer(self._input_report_writable)[0] = self._input_report_submitting
 
-    @contextlib.contextmanager
-    def start_modify_report(self) -> Iterator[InputReport]:
-        with self.input_report_lock:
-            yield self._input_report_next
+    def start_modify_report(self) -> ReportModificationContext:
+        return ReportModificationContext(self)
 
-    def process_feedback(self, data: memoryview):
+    def process_feedback(self, data: memoryview) -> None:
         if len(data) != ctypes.sizeof(FeedbackReport):
             logger.error('Wrong size for feedback report. Ignored')
-            return
+            return None
         self.feedback_report = FeedbackReport.from_buffer_copy(data)
 
-    def get_feature_configuration(self, ep0: io.FileIO):
+    def get_feature_configuration(self, ep0: io.FileIO) -> None:
         ep0.write(self._features) #type: ignore[arg-type]
 
-    def prepare_challenge(self):
+    def prepare_challenge(self) -> None:
         try:
-            self._response.write(self._ds4key.sign_challenge(self._nonce.getvalue()))
+            self._response.write(self._ds4key.sign_challenge(self._nonce.getvalue())) #type: ignore[arg-type]
             self._response.seek(0)
         except Exception:
             logger.exception('Challenge signing failed with an exception.')
@@ -565,13 +592,13 @@ class DS4StateTracker:
         else:
             self._auth_status = 0x0
 
-    def get_page_size(self, ep0: io.FileIO):
+    def get_page_size(self, ep0: io.FileIO) -> None:
         buf = AuthPageSizeReport(type=ReportType.get_auth_page_size)
         buf.size_challenge = self.auth_req_size
         buf.size_response = self.auth_resp_size
         ep0.write(buf) #type: ignore[arg-type]
 
-    def set_challenge(self, ep0: io.FileIO):
+    def set_challenge(self, ep0: io.FileIO) -> None:
         buf = AuthReport()
         ep0.readinto(buf) #type: ignore[arg-type]
         if buf.type != int(ReportType.set_challenge):
@@ -588,13 +615,13 @@ class DS4StateTracker:
             self._auth_rsa_task.submit(self.prepare_challenge)
         self._auth_req_page += 1
 
-    def get_auth_status(self, ep0: io.FileIO):
+    def get_auth_status(self, ep0: io.FileIO) -> None:
         buf = AuthStatusReport(type=ReportType.get_auth_status)
         buf.seq = self._auth_seq
         buf.status = self._auth_status
         ep0.write(buf) #type: ignore[arg-type]
 
-    def get_response(self, ep0: io.FileIO):
+    def get_response(self, ep0: io.FileIO) -> None:
         buf = AuthReport(type=ReportType.get_response)
         buf.seq = self._auth_seq
         buf.page = self._auth_resp_page
