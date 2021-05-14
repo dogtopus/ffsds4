@@ -29,9 +29,9 @@ def create_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog='')
     sps = p.add_subparsers(dest='cmd', help='Command.')
 
-    sp = sps.add_parser('press')
-    sp.add_argument('-t', '--hold-time', help='Time to hold the buttons.')
-    sp.add_argument('buttons', nargs='+', help='Buttons to press.')
+    sp = sps.add_parser('press', help='Press the specified buttons.')
+    sp.add_argument('-t', '--hold-time', type=float, help='Time to hold the buttons.')
+    sp.add_argument('buttons', metavar='button', nargs='+', choices=tuple(item.name for item in ds4.ButtonType), help='Buttons to press.')
     return p
 
 def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
@@ -45,15 +45,20 @@ def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
     return _wrapper
 
 
-def use_argparse(func: ConsoleArgparseDoMethod) -> ConsoleDoMethod:
-    @functools.wraps(func)
-    def _wrapper(self: 'Console', args: str) -> Optional[bool]:
-        try:
-            parsed_args = self._parser.parse_args()
-            return func(self, parsed_args)
-        except SystemExit:
-            return None
-    return _wrapper
+def use_argparse(insert_subcmd: Optional[str] = None) -> Callable[[ConsoleArgparseDoMethod], ConsoleDoMethod]:
+    def _decorator(func: ConsoleArgparseDoMethod) -> ConsoleDoMethod:
+        @functools.wraps(func)
+        def _wrapper(self: 'Console', args: str) -> Optional[bool]:
+            shlex_args = shlex.split(args)
+            if insert_subcmd is not None:
+                shlex_args.insert(0, insert_subcmd)
+            try:
+                parsed_args = self._parser.parse_args(shlex_args)
+                return func(self, parsed_args)
+            except SystemExit:
+                return None
+        return _wrapper
+    return _decorator
 
 
 class Console(cmd.Cmd):
@@ -73,23 +78,7 @@ class Console(cmd.Cmd):
         self._sequencer.start()
         self._parser = create_parser()
 
-    def do_exit(self, _arg):
-        self._sequencer.shutdown()
-        logger.debug('Sending SIGINT to ourselves...')
-        os.kill(os.getpid(), signal.SIGINT)
-        return True
-
-    @wait_for_connect
-    def do_presstest(self, _arg):
-        self._sequencer.queue_press_buttons({ ds4.ButtonType.ps })
-
-    def do_connected(self, _arg):
-        print('Connected.' if self._function.connected.is_set() else 'Disconnected.')
-
-    def do_EOF(self, _arg):
-        return self.do_exit(_arg)
-
-    def do_help(self, arg):
+    def do_help(self, arg: str):
         args = shlex.split(arg)
         try:
             if len(args) == 0:
@@ -98,3 +87,27 @@ class Console(cmd.Cmd):
                 self._parser.parse_args((args[0], '--help'))
         except SystemExit:
             return
+
+    def do_exit(self, _arg: str):
+        self._sequencer.shutdown()
+        logger.debug('Sending SIGINT to ourselves...')
+        os.kill(os.getpid(), signal.SIGINT)
+        return True
+
+    def do_EOF(self, _arg: str):
+        return self.do_exit(_arg)
+
+    @wait_for_connect
+    @use_argparse('press')
+    def do_press(self, args: argparse.Namespace):
+        hold_time: Optional[float]
+        hold_time = args.hold_time
+        try:
+            buttons = set(ds4.ButtonType[name] for name in args.buttons)
+        except KeyError as e:
+            print(f'Unknown button {e}')
+            return
+        self._sequencer.queue_press_buttons(buttons, hold_time if hold_time is not None else 0.05)
+
+    def do_connected(self, _arg: str):
+        print('Connected.' if self._function.connected.is_set() else 'Disconnected.')

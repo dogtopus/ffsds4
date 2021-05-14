@@ -5,6 +5,7 @@
 # Copyright (C) 2021-  dogtopus
 
 import enum
+import functools
 import threading
 import queue
 import time
@@ -23,14 +24,26 @@ class ControllerEventType(enum.Enum):
     press = enum.auto()
     release = enum.auto()
 
+@functools.total_ordering
 class ControllerEvent:
     target: InputTypeIdentifier
     next_: Optional["ControllerEvent"]
-    def __init__(self, op: ControllerEventType, target: InputTypeIdentifier) -> None:
+    def __init__(self, at: float, op: ControllerEventType, target: InputTypeIdentifier) -> None:
+        self.at = at
         self.op = op
         self.target = target
         self.cancelled = False
         self.next_ = None
+
+    def __lt__(self, other: object):
+        if not isinstance(other, ControllerEvent):
+            raise TypeError('Comparing ControllerEvent with non-ControllerEvent object is not supported.')
+        return self.at < other.at
+
+    def __eq__(self, other: object):
+        if not isinstance(other, ControllerEvent):
+            raise TypeError('Comparing ControllerEvent with non-ControllerEvent object is not supported.')
+        return self.at == other.at
 
     def cancel(self) -> None:
         next_: Optional["ControllerEvent"] = self
@@ -38,12 +51,12 @@ class ControllerEvent:
             next_.cancelled = True
             next_ = next_.next_
 
-    def chain(self, op: ControllerEventType, target: Tuple[InputTargetType, Any]) -> "ControllerEvent":
-        self.next_ = ControllerEvent(op, target)
+    def chain(self, at: float, op: ControllerEventType, target: Tuple[InputTargetType, Any]) -> "ControllerEvent":
+        self.next_ = ControllerEvent(at, op, target)
         return self.next_
 
 class Sequencer:
-    _event_queue: queue.PriorityQueue[Tuple[float, ControllerEvent]]
+    _event_queue: queue.PriorityQueue[ControllerEvent]
     _holding: Dict[InputTypeIdentifier, ControllerEvent]
     def __init__(self, tracker: DS4StateTracker) -> None:
         self._tracker = tracker
@@ -66,8 +79,8 @@ class Sequencer:
                         while self._event_queue._qsize() != 0:
                             current_time = time.perf_counter()
                             # peek
-                            if current_time >= self._event_queue.queue[0][0]:
-                                _at, event = self._event_queue._get()
+                            if current_time >= self._event_queue.queue[0].at:
+                                event = self._event_queue._get()
                                 if not event.cancelled:
                                     events.append(event)
                             else:
@@ -132,24 +145,24 @@ class Sequencer:
                         report.set_button(button, False)
 
                     # New event chain
-                    event_press = ControllerEvent(op=ControllerEventType.press, target=target)
-                    event_release_final = event_press.chain(op=ControllerEventType.release, target=target)
+                    event_press = ControllerEvent(at=start_time+self._min_release_time, op=ControllerEventType.press, target=target)
+                    event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=ControllerEventType.release, target=target)
 
                     self._holding[target] = event_press
 
                     # Ensure the button is released for at least _min_release_time seconds, then press it.
-                    self._event_queue.put((start_time+self._min_release_time, event_press))
+                    self._event_queue.put(event_press)
                     # At hold_until+_min_release_time time, release again
-                    self._event_queue.put((hold_until+self._min_release_time, event_release_final))
+                    self._event_queue.put(event_release_final)
                 else:
                     # Press the button
                     with self._tracker.start_modify_report() as report:
                         report.set_button(button, True)
 
                     # Hold until hold_until seconds later and release
-                    event = ControllerEvent(op=ControllerEventType.release, target=target)
+                    event = ControllerEvent(at=hold_until, op=ControllerEventType.release, target=target)
                     self._holding[target] = event
-                    self._event_queue.put((hold_until, event))
+                    self._event_queue.put(event)
 
     def hold_release_buttons(self, buttons: Set[ButtonType], release=False) -> None:
         '''

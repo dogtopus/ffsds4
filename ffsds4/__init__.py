@@ -60,7 +60,7 @@ class HIDINEndpoint(functionfs.EndpointINFile):
                 # Controller is unplugged, host selected another configuration, ...
                 # Stop submitting the transfer.
                 return False
-            logger.error(f'IN endpoint failed {status}.')
+            logger.error(f'IN endpoint failed: {os.strerror(-status)}.')
             raise IOError(-status)
         # Buffer swapping
         with self._controller_instance.tracker.input_report_lock:
@@ -81,7 +81,7 @@ class HIDOUTEndpoint(functionfs.EndpointOUTFile):
         if data is None:
             if status == -errno.ESHUTDOWN:
                 return False
-            logger.error(f'OUT endpoint failed {status}.')
+            logger.error(f'OUT endpoint failed: {os.strerror(-status)}.')
             raise IOError(-status)
         self._controller_instance.tracker.process_feedback(data)
         return True
