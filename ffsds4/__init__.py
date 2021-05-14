@@ -91,11 +91,14 @@ class DS4Function(functionfs.HIDFunction):
     """
     Third party PS4 controller function.
     """
-    def __init__(self, ds4key_path, **kw):
+    def __init__(self, ds4key_path, turbo=False, **kw):
         super().__init__(
             report_descriptor=REPORT_DESCRIPTOR,
             in_report_max_length=64,
             out_report_max_length=64,
+            # Defaults to 4ms poll with optional 1ms poll
+            full_speed_interval=4 if not turbo else 1,
+            high_speed_interval=6 if not turbo else 4,
             **kw
         )
         global logger

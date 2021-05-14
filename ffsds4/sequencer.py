@@ -9,7 +9,7 @@ import threading
 import queue
 import time
 import logging
-from typing import Sequence, Optional, Set, Tuple, Any, Type, Union, Dict
+from typing import Sequence, Optional, Set, Tuple, Any, Type, Union, Dict, MutableSequence
 
 from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType
 
@@ -26,14 +26,14 @@ class ControllerEventType(enum.Enum):
 class ControllerEvent:
     target: InputTypeIdentifier
     next_: Optional["ControllerEvent"]
-    def __init__(self, op: ControllerEventType, target: InputTypeIdentifier):
+    def __init__(self, op: ControllerEventType, target: InputTypeIdentifier) -> None:
         self.op = op
         self.target = target
         self.cancelled = False
         self.next_ = None
 
-    def cancel(self):
-        next_ = self
+    def cancel(self) -> None:
+        next_: Optional["ControllerEvent"] = self
         while next_ is not None:
             next_.cancelled = True
             next_ = next_.next_
@@ -45,7 +45,7 @@ class ControllerEvent:
 class Sequencer:
     _event_queue: queue.PriorityQueue[Tuple[float, ControllerEvent]]
     _holding: Dict[InputTypeIdentifier, ControllerEvent]
-    def __init__(self, tracker: DS4StateTracker):
+    def __init__(self, tracker: DS4StateTracker) -> None:
         self._tracker = tracker
         self._event_queue = queue.PriorityQueue()
         self._holding = {}
@@ -55,11 +55,11 @@ class Sequencer:
         self._shutdown_flag = threading.Event()
         self._mutex = threading.RLock()
 
-    def _tick(self):
+    def _tick(self) -> None:
         logger.debug('Sequencer tick thread started.')
         try:
             while not self._shutdown_flag.wait(self._tick_interval):
-                events: Sequence[ControllerEvent] = []
+                events: MutableSequence[ControllerEvent] = []
                 # TODO should we just write our own synchronized PQ?
                 with self._mutex:
                     with self._event_queue.mutex:
@@ -90,7 +90,7 @@ class Sequencer:
         finally:
             logger.debug('Sequencer tick thread stopped.')
 
-    def start(self):
+    def start(self) -> None:
         '''
         Start sequencer thread.
         '''
@@ -102,7 +102,7 @@ class Sequencer:
             self._tick_thread = threading.Thread(target=self._tick)
             self._tick_thread.start()
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         '''
         Shut down sequencer thread.
         '''
@@ -110,7 +110,7 @@ class Sequencer:
         self._shutdown_flag.set()
         self._tick_thread.join()
 
-    def queue_press_buttons(self, buttons: Set[ButtonType], hold: float = 0.05):
+    def queue_press_buttons(self, buttons: Set[ButtonType], hold: float = 0.05) -> None:
         '''
         Queue a timed button press event affecting one or more buttons.
         Previous queued events on affected buttons will be cancelled and a
@@ -151,11 +151,14 @@ class Sequencer:
                     self._holding[target] = event
                     self._event_queue.put((hold_until, event))
 
-    def hold_release_buttons(self, buttons: Set[ButtonType], release=False):
+    def hold_release_buttons(self, buttons: Set[ButtonType], release=False) -> None:
         '''
         Hold buttons indefinitely. Note that this will not generate a release
         event for holding initiated by queue_press_buttons but will cancel
         the event chain already in progress.
+
+        If release is True, it will release the buttons unconditionally and
+        cancel all related events.
         '''
         with self._tracker.start_modify_report() as report, self._mutex:
             for button in buttons:
@@ -166,3 +169,19 @@ class Sequencer:
                     del self._holding[target]
                 report.set_button(button, not release)
 
+    def hold_buttons(self, buttons: Set[ButtonType]) -> None:
+        '''
+        Hold buttons indefinitely.
+
+        Equivalent to Sequencer.hold_release_buttons(buttons, False)
+        '''
+        self.hold_release_buttons(buttons)
+
+    def release_buttons(self, buttons: Set[ButtonType]) -> None:
+        '''
+        Unconditionally release buttons and cancel all pending events
+        associated with them.
+
+        Equivalent to Sequencer.hold_release_buttons(buttons, True)
+        '''
+        self.hold_release_buttons(buttons, True)
