@@ -63,10 +63,18 @@ class HIDINEndpoint(functionfs.EndpointINFile):
             logger.error(f'IN endpoint failed: {os.strerror(-status)}.')
             raise IOError(-status)
         # Buffer swapping
-        with self._controller_instance.tracker.input_report_lock:
-            self._controller_instance.tracker.swap_buffer_nolock()
-            self._controller_instance.tracker.sync_buffer_nolock()
-            return (self._controller_instance.tracker.input_report_submitting_buf, )
+        tracker = self._controller_instance.tracker
+        with tracker.input_report_lock:
+            # Queue the last touchpad points if applicable (for touchpad holding).
+            tracker.input_report_writable.queue_touchpad_sustain()
+            # Swap and copy the buffer.
+            tracker.swap_buffer_nolock()
+            tracker.sync_buffer_nolock()
+            # After copying, increment the report index of the writable buffer.
+            tracker.input_report_writable.inc_report_index()
+            # Also clear the touchpad buffer
+            tracker.input_report_writable.clear_touchpad()
+            return (tracker.input_report_submitting_buf, )
 
 
 class HIDOUTEndpoint(functionfs.EndpointOUTFile):

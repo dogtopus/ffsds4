@@ -115,12 +115,48 @@ a00f 3d00 e803
 000000000000000000000000000000000000000000
 ''')
 
+# TODO: Touchpad packet sequences start from 1 but it shouldn't really matter as long as they are incrementing at the right time...
+TP_SET_ONE_INVALIDATED = bytes.fromhex('''
+01
+02 8064800c 81c8c012
+00 80000000 80000000
+00 80000000 80000000
+''')
+
+TP_SET_ONE = bytes.fromhex('''
+01
+01 0064800c 01c8c012
+00 80000000 80000000
+00 80000000 80000000
+''')
+
+TP_SET_MULTI = bytes.fromhex('''
+02
+01 0064800c 01c8c012
+02 0096800c 01fac012
+00 80000000 80000000
+''')
+
+TP_SET_ONE_AFTER_RELEASE = bytes.fromhex('''
+01
+03 0264800c 03c8c012
+00 80000000 80000000
+00 80000000 80000000
+''')
+
+
 class DS4Test(unittest.TestCase):
     def test_ds4key_load(self):
+        '''
+        DS4Key loading.
+        '''
         ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
         _ds4key = ds4.DS4Key(ds4key_io)
 
     def test_ds4key_sign(self):
+        '''
+        Challenge signing with DS4Key object directly.
+        '''
         ds4key_bytes = base64.b64decode(TEST_DS4KEY)
         ds4key_io = io.BytesIO(ds4key_bytes)
         ds4id_expected = ds4key_bytes[:0x310]
@@ -144,6 +180,9 @@ class DS4Test(unittest.TestCase):
             self.fail(f'Response verification failed. ({str(e)})')
 
     def test_tracker_auth_full(self):
+        '''
+        Authentication with state tracker (API-level DS4 protocol mockup).
+        '''
         ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
         ds4key = ds4.DS4Key(ds4key_io)
         ds4id_expected = ds4key_io.getvalue()[:0x310]
@@ -211,10 +250,16 @@ class DS4Test(unittest.TestCase):
     # TODO DS4 API
 
     def test_input_init(self):
+        '''
+        Initialize input report.
+        '''
         report = ds4.InputReport()
         self.assertEqual(bytes(report).hex(), INITIAL_DS4_INPUT_REPORT.hex())
 
     def test_input_set_dpad(self):
+        '''
+        Set DPad.
+        '''
         report = ds4.InputReport()
         report.set_dpad(ds4.DPadPosition.nw)
         actual = bytes(report)[5] & 0xf
@@ -222,6 +267,9 @@ class DS4Test(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_input_set_button(self):
+        '''
+        Set buttons.
+        '''
         report = ds4.InputReport()
         report.set_dpad(ds4.DPadPosition.s)
         report.set_button(ds4.ButtonType.l3, True)
@@ -234,6 +282,9 @@ class DS4Test(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_input_clear_button(self):
+        '''
+        Clear buttons.
+        '''
         report = ds4.InputReport()
         report.set_dpad(ds4.DPadPosition.s)
         report.set_button(ds4.ButtonType.l3, True)
@@ -247,7 +298,166 @@ class DS4Test(unittest.TestCase):
         expected = 'c00000'
         self.assertEqual(actual, expected)
 
+    def test_input_touchpad_one(self):
+        '''
+        One frame 2 point touch.
+        '''
+        report = ds4.InputReport()
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain()
+
+        actual = bytes(report)[33:61].hex()
+        expected = TP_SET_ONE.hex()
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_multiple(self):
+        '''
+        Two frames with moving 2 point touch.
+        '''
+        report = ds4.InputReport()
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad((150, 200), (250, 300))
+        report.queue_touchpad_sustain()
+
+        actual = bytes(report)[33:61].hex()
+        expected = TP_SET_MULTI.hex()
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_release_one(self):
+        '''
+        Release one point only will only result in that point being
+        invalidated. Only checks the invalidation states.
+        '''
+        report = ds4.InputReport()
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        report.queue_touchpad(release_pos0=False)
+        tp_report = bytes(report)[33:61]
+
+        actual = (bool(tp_report[2] & 0x80), bool(tp_report[6] & 0x80))
+        expected = (False, True)
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_release_both(self):
+        '''
+        Release both points will cause both points to be invalidated. Only
+        checks the invalidation states.
+        '''
+        report = ds4.InputReport()
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        report.queue_touchpad()
+        tp_report = bytes(report)[33:61]
+
+        actual = (bool(tp_report[2] & 0x80), bool(tp_report[6] & 0x80))
+        expected = (True, True)
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_hold(self):
+        '''
+        Not updating the points will cause them to be held at position with
+        frame seq incrementing.
+        '''
+        report = ds4.InputReport()
+        report.queue_touchpad((100, 200), (200, 300))
+        # Hold for 2 frames
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        report.queue_touchpad_sustain()
+
+        actual = bytes(report)[33:61].hex()
+        expected_bytes = bytearray(TP_SET_ONE)
+        # Frame sequence should be 3 now
+        expected_bytes[1] = 3
+        expected = expected_bytes.hex()
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_nohold(self):
+        '''
+        Touch shouldn't be held when there are actual new points.
+        '''
+        report = ds4.InputReport()
+        report.queue_touchpad((230, 125), (500, 100))
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain() # this should do nothing now
+
+        actual = bytes(report)[33:61].hex()
+        expected_bytes = bytearray(TP_SET_ONE)
+        # Frame sequence should be 2 now
+        expected_bytes[1] = 2
+        expected = expected_bytes.hex()
+        # Exactly as before with empty unused frames
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_nohold_after_release(self):
+        '''
+        Touch shouldn't be held when they are released. Instead they should be invalidated.
+        '''
+        report = ds4.InputReport()
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        report.queue_touchpad()
+        report.queue_touchpad_sustain()
+
+        actual = bytes(report)[33:61].hex()
+        expected = TP_SET_ONE_INVALIDATED.hex()
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_nohold_after_release_2(self):
+        '''
+        Invalidated touches will continue to be available despite invalidated.
+
+        This mimics official DS4 behavior.
+        '''
+        report = ds4.InputReport()
+        # Initial frame
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        # Release - This is one packet despite all points are invalidated.
+        report.queue_touchpad()
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        # Sustain the invalidated packet. No value should be incrementing.
+        report.queue_touchpad_sustain()
+
+        actual = bytes(report)[33:61].hex()
+        expected = TP_SET_ONE_INVALIDATED.hex()
+        self.assertEqual(actual, expected)
+
+    def test_input_touchpad_touch_seq_inc(self):
+        '''
+        Touch sequence should be increased when different touches are
+        registered.
+        '''
+        report = ds4.InputReport()
+        # Initial frame
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        # Release - This is one packet despite all points are invalidated.
+        report.queue_touchpad()
+        report.queue_touchpad_sustain()
+        report.clear_touchpad()
+        # Second frame with 2 different points
+        report.queue_touchpad((100, 200), (200, 300))
+        report.queue_touchpad_sustain()
+
+        actual = bytes(report)[33:61].hex()
+        expected = TP_SET_ONE_AFTER_RELEASE.hex()
+        self.assertEqual(actual, expected)
+
     def test_tracker_edit_context(self):
+        '''
+        Report editing context and buffer swapping.
+        '''
         ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
         ds4key = ds4.DS4Key(ds4key_io)
         features = ds4.FeatureConfiguration()
@@ -265,6 +475,9 @@ class DS4Test(unittest.TestCase):
         self.assertEqual(actual_next, expected)
 
     def test_feature_config_all_enabled(self):
+        '''
+        Feature config - All enabled.
+        '''
         features = ds4.FeatureConfiguration(
             enable_touchpad=True,
             enable_imu=True,

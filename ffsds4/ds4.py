@@ -79,6 +79,74 @@ class TouchFrame(ctypes.LittleEndianStructure):
     )
     _pack_ = True
 
+    def set_invalidation(self, pos: int, is_invalidate: bool = True):
+        if is_invalidate:
+            self.pos[pos] |= 1 << 7
+        else:
+            self.pos[pos] &= (~(1 << 7)) & 0xffffffff
+
+    def validate_pos0(self):
+        self.set_invalidation(0, False)
+
+    def invalidate_pos0(self):
+        self.set_invalidation(0)
+
+    def validate_pos1(self):
+        self.set_invalidation(1, False)
+
+    def invalidate_pos1(self):
+        self.set_invalidation(1)
+
+    def get_invalidation(self, pos: int) -> bool:
+        return bool(self.pos[pos] >> 7 & 1)
+
+    def get_invalidation_pos0(self) -> bool:
+        return self.get_invalidation(0)
+
+    def get_invalidation_pos1(self) -> bool:
+        return self.get_invalidation(1)
+
+    def get_invalidation_both(self) -> bool:
+        '''
+        Return True if both positions are invalidated.
+        '''
+        return self.get_invalidation_pos0() and self.get_invalidation_pos1()
+
+    def set_pos(self, pos, xy: Tuple[int, int]):
+        x, y = xy
+        self.pos[pos] = (((y & 0xfff) << 20) | ((x & 0xfff) << 8)) | (self.pos[pos] & 0xff)
+
+    def get_pos(self, pos: int) -> Tuple[int, int]:
+        return (self.pos[pos] >> 8) & 0xfff, (self.pos[pos] >> 20) & 0xfff
+
+    def set_pos0(self, xy: Tuple[int, int]):
+        self.set_pos(0, xy)
+
+    def set_pos1(self, xy: Tuple[int, int]) -> None:
+        self.set_pos(1, xy)
+
+    def set_touch_seq(self, pos: int, seq: int) -> None:
+        self.pos[pos] = (self.pos[pos] & 0xffffff80) | (seq & 0x7f)
+
+    def set_touch_seq_pos0(self, seq: int) -> None:
+        self.set_touch_seq(0, seq)
+
+    def set_touch_seq_pos1(self, seq: int) -> None:
+        self.set_touch_seq(1, seq)
+
+    def get_touch_seq(self, pos: int) -> int:
+        return self.pos[pos] & 0x7f
+
+    def get_touch_seq_pos0(self) -> int:
+        return self.get_touch_seq(0)
+
+    def get_touch_seq_pos1(self) -> int:
+        return self.get_touch_seq(1)
+
+    def clear(self) -> None:
+        self.seq = 0
+        self.pos[0] = 1 << 7
+        self.pos[1] = 1 << 7
 
 class InputReport(ctypes.LittleEndianStructure):
     type: int
@@ -94,8 +162,10 @@ class InputReport(ctypes.LittleEndianStructure):
     state_ext: int
     u31: int
     tp_available_frame: int
-    tp_frames: Sequence[TouchFrame]
+    tp_frames: MutableSequence[TouchFrame]
     padding: MutableSequence[int]
+    _tp_touch_autoindex: int
+    _report_autoindex: int
 
     _fields_ = (
         ('type', ctypes.c_uint8),
@@ -116,7 +186,7 @@ class InputReport(ctypes.LittleEndianStructure):
     )
     _pack_ = True
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         actual_kwargs = dict(
             type=ReportType.in_report,
             sticks=(0x80, 0x80, 0x80, 0x80),
@@ -127,8 +197,27 @@ class InputReport(ctypes.LittleEndianStructure):
         super().__init__(*args, **actual_kwargs)
         self.set_dpad(DPadPosition.neutral)
         self.clear_touchpad()
+        self._tp_touch_autoindex = 0
+        self._report_autoindex = 0
+        self._last_known_tp_frame = TouchFrame()
+        self._last_known_tp_frame.clear()
 
-    def set_button(self, button: Union[int, ButtonType], pressed: bool):
+    def inc_report_index(self) -> None:
+        '''
+        Increment the report index.
+        '''
+        self.buttons[2] += 4
+
+    def _get_touch_autoindex(self) -> int:
+        rv = self._tp_touch_autoindex
+        self._tp_touch_autoindex += 1
+        self._tp_touch_autoindex &= 0x7f
+        return rv
+
+    def clear_report_index(self) -> None:
+        self.buttons[2] ^= self.buttons[2] & 0b11111100
+
+    def set_button(self, button: Union[int, ButtonType], pressed: bool) -> None:
         button = ButtonType(button)
         button = int(button) + 4
         byte_offset = ((button >> 3) & 3)
@@ -138,30 +227,82 @@ class InputReport(ctypes.LittleEndianStructure):
         else:
             self.buttons[byte_offset] &= (~(1 << bit_offset)) & 0xff
 
-    def clear_buttons(self):
+    def clear_buttons(self) -> None:
         self.buttons[0] ^= self.buttons[0] & 0b00001111
         self.buttons[1] = 0
         self.buttons[2] = 0
 
-    def set_stick(self, left: Tuple[int, int], right: Tuple[int, int]):
+    def set_stick(self, left: Tuple[int, int], right: Tuple[int, int]) -> None:
         self.sticks[0] = left[0]
         self.sticks[1] = left[1]
         self.sticks[2] = right[0]
         self.sticks[3] = right[1]
 
-    def set_dpad(self, position: DPadPosition):
+    def set_dpad(self, position: DPadPosition) -> None:
         position = DPadPosition(position)
         self.buttons[0] ^= self.buttons[0] & 0xf
         self.buttons[0] |= int(position)
 
-    # TODO IMU and touchpad
+    # TODO IMU
 
-    def clear_touchpad(self):
+    def clear_touchpad(self) -> None:
         self.tp_available_frame = 0
-        for i in range(3):
-            self.tp_frames[i].seq = 0
-            self.tp_frames[i].pos[0] = 1 << 7
-            self.tp_frames[i].pos[1] = 1 << 7
+        for frame in self.tp_frames:
+            frame.clear()
+
+    def queue_touchpad_sustain(self):
+        '''
+        Queue last touchpad position if it is valid and there is no other
+        frames queued.
+
+        Should be called right before submitting the buffer.
+        '''
+        if self.tp_available_frame == 0:
+            if not self._last_known_tp_frame.get_invalidation_both():
+                self._last_known_tp_frame.seq += 1
+            self.tp_frames[0] = self._last_known_tp_frame
+            self.tp_available_frame += 1
+            
+
+    def queue_touchpad(self, pos0: Optional[Tuple[int, int]] = None, pos1: Optional[Tuple[int, int]] = None, release_pos0: bool = True, release_pos1: bool = True) -> None:
+        '''
+        Queue touchpad press.
+
+        If pos0 and pos1 are 2-tuple of ints, they are used as the new
+        coordinates of the touch. If they are None, release_pos0 and
+        release_pos1 will be checked. If they are True, the corresponding
+        points are released (invalidated), otherwise the points will remain
+        unchanged (held down).
+        '''
+        if self.tp_available_frame >= 3:
+            raise RuntimeError('Touchpad frame queue full.')
+
+        frame = self._last_known_tp_frame
+
+        frame.seq += 1
+
+        if pos0 is not None:
+            frame.set_pos0(pos0)
+            # Validate the touch position if it's previously invalidated and increment the touch counter
+            if frame.get_invalidation_pos0():
+                frame.set_touch_seq_pos0(self._get_touch_autoindex())
+                frame.validate_pos0()
+        elif release_pos0:
+            # Release the touch when required
+            frame.invalidate_pos0()
+        # Otherwise, do nothing (lazy update)
+
+        if pos1 is not None:
+            frame.set_pos1(pos1)
+            if frame.get_invalidation_pos1():
+                frame.set_touch_seq_pos1(self._get_touch_autoindex())
+                frame.validate_pos1()
+        elif release_pos1:
+            frame.invalidate_pos1()
+
+        # Copy last working frame to the report
+        self.tp_frames[self.tp_available_frame] = frame
+        self.tp_available_frame += 1
 
 
 class FeedbackReport(ctypes.LittleEndianStructure):
