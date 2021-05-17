@@ -10,7 +10,7 @@ import threading
 import queue
 import time
 import logging
-from typing import Sequence, Optional, Set, Tuple, Any, Type, Union, Dict, MutableSequence
+from typing import Sequence, Optional, Set, Tuple, Any, Type, Union, Dict, MutableSequence, Callable, Mapping
 
 from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType
 
@@ -55,6 +55,52 @@ class ControllerEvent:
         self.next_ = ControllerEvent(at, op, target)
         return self.next_
 
+
+class ReschedulableAlarm(threading.Thread):
+    def __init__(self, func: Callable[..., None], args: Optional[Sequence[Any]]=None, kwargs: Optional[Mapping[Any, Any]]=None):
+        self._func: Callable[..., None] = func
+        self._args = args
+        self._kwargs = kwargs
+        self._at: Optional[float] = None
+        self._timeout_or_cancel = threading.Condition()
+        self._exit = threading.Event()
+
+    def run(self):
+        '''
+        Alarm thread.
+        '''
+        while not self._exit.wait(0):
+            with self._timeout_or_cancel:
+                timeout = min(self._at - time.monotonic(), 0) if self._at is not None else None
+                if not self._timeout_or_cancel.wait(timeout):
+                    self._func(self._args, self._kwargs)
+                if self._exit.wait(0):
+                    break
+
+    def reschedule(self, at: Optional[float] = None):
+        '''
+        Cancel the current running alarm and reschedule the alarm for another
+        time.
+        '''
+        with self._timeout_or_cancel:
+            self._at = at
+            self._timeout_or_cancel.notify_all()
+
+    def cancel(self):
+        '''
+        Cancel the current running alarm and put the thread to sleep
+        indefinitely.
+        '''
+        self.reschedule()
+
+    def stop(self):
+        '''
+        Cancel the current running alarm and signal the thread to shutdown.
+        '''
+        self._exit.set()
+        self.cancel()
+
+
 class Sequencer:
     _event_queue: queue.PriorityQueue[ControllerEvent]
     _holding: Dict[InputTypeIdentifier, ControllerEvent]
@@ -77,7 +123,7 @@ class Sequencer:
                 with self._mutex:
                     with self._event_queue.mutex:
                         while self._event_queue._qsize() != 0:
-                            current_time = time.perf_counter()
+                            current_time = time.monotonic()
                             # peek
                             if current_time >= self._event_queue.queue[0].at:
                                 event = self._event_queue._get()
@@ -130,7 +176,7 @@ class Sequencer:
         release event will be queued before the actual press and release
         event.
         '''
-        start_time = time.perf_counter()
+        start_time = time.monotonic()
         hold_until = start_time + hold
         with self._mutex:
             for button in buttons:
