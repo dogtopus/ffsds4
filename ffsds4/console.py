@@ -26,12 +26,20 @@ ConsoleDoMethod = Callable[['Console', str], Optional[bool]]
 ConsoleArgparseDoMethod = Callable[['Console', argparse.Namespace], Optional[bool]]
 
 def create_parser() -> argparse.ArgumentParser:
+    button_choices = tuple(item.name for item in ds4.ButtonType)
+
     p = argparse.ArgumentParser(prog='')
     sps = p.add_subparsers(dest='cmd', help='Command.')
 
     sp = sps.add_parser('press', help='Press the specified buttons.')
     sp.add_argument('-t', '--hold-time', type=float, help='Time to hold the buttons.')
-    sp.add_argument('buttons', metavar='button', nargs='+', choices=tuple(item.name for item in ds4.ButtonType), help='Buttons to press.')
+    sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to press.')
+
+    sp = sps.add_parser('hold', help='Press and hold a button indefinitely.')
+    sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
+
+    sp = sps.add_parser('release', help='Unconditionally release previously held buttons.')
+    sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
     return p
 
 def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
@@ -108,6 +116,26 @@ class Console(cmd.Cmd):
             print(f'Unknown button {e}')
             return
         self._sequencer.queue_press_buttons(buttons, hold_time if hold_time is not None else 0.05)
+
+    @wait_for_connect
+    @use_argparse('hold')
+    def do_hold(self, args: argparse.Namespace):
+        try:
+            buttons = set(ds4.ButtonType[name] for name in args.buttons)
+        except KeyError as e:
+            print(f'Unknown button {e}')
+            return
+        self._sequencer.hold_buttons(buttons)
+
+    @wait_for_connect
+    @use_argparse('release')
+    def do_release(self, args: argparse.Namespace):
+        try:
+            buttons = set(ds4.ButtonType[name] for name in args.buttons)
+        except KeyError as e:
+            print(f'Unknown button {e}')
+            return
+        self._sequencer.release_buttons(buttons)
 
     def do_connected(self, _arg: str):
         print('Connected.' if self._function.connected.is_set() else 'Disconnected.')
