@@ -88,7 +88,7 @@ class DS4Function(functionfs.HIDFunction):
     """
     Third party PS4 controller function.
     """
-    def __init__(self, ds4key_path, turbo=False, **kw):
+    def __init__(self, ds4key_path, turbo=False, aligned=False, **kw):
         super().__init__(
             report_descriptor=REPORT_DESCRIPTOR,
             in_report_max_length=64,
@@ -112,7 +112,7 @@ class DS4Function(functionfs.HIDFunction):
             enable_imu=True
         )
 
-        self.tracker = ds4.DS4StateTracker(ds4key, self.features)
+        self.tracker = ds4.DS4StateTracker(ds4key, self.features, aligned=aligned)
         self.console = console.Console(self)
         self.connected = threading.Event()
         self.connected.clear()
@@ -185,7 +185,7 @@ def create_gadget_instance(args):
                     'function_list': [
                         functools.partial(
                             ConfigFunctionFFSSubprocess,
-                            getFunction=functools.partial(DS4Function, os.path.abspath(args.ds4key))
+                            getFunction=functools.partial(DS4Function, os.path.abspath(args.ds4key), aligned=args.aligned)
                         ),
                     ],
                     'MaxPower': 500,
@@ -221,6 +221,7 @@ def parse_args():
         description='DS4 emulator based on FunctionFS.',
     )
     p.add_argument('-l', '--log-level', type=parse_loglevel, default='INFO', help='Set log level (either Python log level names e.g. DEBUG or numbers e.g. 10).')
+    p.add_argument('-a', '--aligned', action='store_true', default=False, help='Use aligned buffers for input reports (may be required by certain hardware).')
     p.add_argument('-k', '--ds4key', required=True, help='Specify DS4Key file.')
     return p, p.parse_args()
 

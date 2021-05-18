@@ -11,6 +11,7 @@ import enum
 import itertools
 import io
 import logging
+import mmap
 import threading
 import weakref
 from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable
@@ -63,6 +64,7 @@ class DPadPosition(enum.IntFlag):
     nw = 7
 
 
+UDCFriendlyBuffer = Union[mmap.mmap, bytearray]
 InputTargetType = Union[
     Type[ButtonType],
     Type[DPadPosition],
@@ -619,17 +621,33 @@ class DS4TouchStateTracker:
 
 
 class DS4StateTracker:
-    def __init__(self, ds4key: DS4Key, features: FeatureConfiguration) -> None:
-        # Initialize report A (use the constructor to fill in the initial fields)
-        self._input_report_bufa = bytearray(InputReport())
-        logger.debug('Buffer A: %s', hex(id(self._input_report_bufa)))
-        # Bind buffer A to a new report object (Note this will not copy Python objects over)
-        self._input_report_a = InputReport.from_buffer(self._input_report_bufa)
+    _input_report_bufa: UDCFriendlyBuffer
+    _input_report_bufb: UDCFriendlyBuffer
+    def __init__(self, ds4key: DS4Key, features: FeatureConfiguration, aligned: bool = False) -> None:
+        if aligned:
+            # Use report constructor to create a template
+            report_template = bytes(InputReport())
+            # Allocate buffers to page boundary
+            self._input_report_bufa = mmap.mmap(-1, 64)
+            self._input_report_bufb = mmap.mmap(-1, 64)
+            # Copy the template over
+            self._input_report_bufa.write(report_template)
+            self._input_report_bufb.write(report_template)
+            self._input_report_bufa.seek(0)
+            self._input_report_bufb.seek(0)
+        else:
+            # Initialize report A (use the constructor to fill in the initial fields)
+            self._input_report_bufa = bytearray(InputReport())
+            # Initialize report B as well
+            self._input_report_bufb = bytearray(InputReport())
 
-        # Initialize report B as well
-        self._input_report_bufb = bytearray(InputReport())
-        logger.debug('Buffer B: %s', hex(id(self._input_report_bufb)))
-        self._input_report_b = InputReport.from_buffer(self._input_report_bufb)
+        # Bind buffer A to a new report object (Note this will not copy Python objects over)
+        self._input_report_a = InputReport.from_buffer(memoryview(self._input_report_bufa))
+        logger.debug('Buffer A: %s', hex(ctypes.addressof(self._input_report_a)))
+
+        # Bind buffer B to a new report object (Note this will not copy Python objects over)
+        self._input_report_b = InputReport.from_buffer(memoryview(self._input_report_bufb))
+        logger.debug('Buffer B: %s', hex(ctypes.addressof(self._input_report_b)))
 
         # Set current sending and next report references
         self._input_report_submitting = self._input_report_a
@@ -694,11 +712,11 @@ class DS4StateTracker:
         return self._input_report_submitting
 
     @property
-    def input_report_writable_buf(self) -> bytearray:
+    def input_report_writable_buf(self) -> UDCFriendlyBuffer:
         return self._input_report_writable_buf
 
     @property
-    def input_report_submitting_buf(self) -> bytearray:
+    def input_report_submitting_buf(self) -> UDCFriendlyBuffer:
         return self._input_report_submitting_buf
 
     @property
@@ -732,7 +750,7 @@ class DS4StateTracker:
     def start_modify_report(self) -> ReportModificationContext:
         return ReportModificationContext(self)
 
-    def prepare_for_report_submission(self) -> bytearray:
+    def prepare_for_report_submission(self) -> UDCFriendlyBuffer:
         with self.input_report_lock:
             # Queue the last touchpad points if applicable (for touchpad holding).
             self.touch.queue_touchpad_sustain()
