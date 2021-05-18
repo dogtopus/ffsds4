@@ -12,6 +12,7 @@ import itertools
 import io
 import logging
 import threading
+import weakref
 from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable
 from concurrent import futures
 
@@ -164,8 +165,6 @@ class InputReport(ctypes.LittleEndianStructure):
     tp_available_frame: int
     tp_frames: MutableSequence[TouchFrame]
     padding: MutableSequence[int]
-    _tp_touch_autoindex: int
-    _report_autoindex: int
 
     _fields_ = (
         ('type', ctypes.c_uint8),
@@ -197,22 +196,12 @@ class InputReport(ctypes.LittleEndianStructure):
         super().__init__(*args, **actual_kwargs)
         self.set_dpad(DPadPosition.neutral)
         self.clear_touchpad()
-        self._tp_touch_autoindex = 0
-        self._report_autoindex = 0
-        self._last_known_tp_frame = TouchFrame()
-        self._last_known_tp_frame.clear()
 
     def inc_report_index(self) -> None:
         '''
         Increment the report index.
         '''
         self.buttons[2] += 4
-
-    def _get_touch_autoindex(self) -> int:
-        rv = self._tp_touch_autoindex
-        self._tp_touch_autoindex += 1
-        self._tp_touch_autoindex &= 0x7f
-        return rv
 
     def clear_report_index(self) -> None:
         self.buttons[2] ^= self.buttons[2] & 0b11111100
@@ -249,60 +238,6 @@ class InputReport(ctypes.LittleEndianStructure):
         self.tp_available_frame = 0
         for frame in self.tp_frames:
             frame.clear()
-
-    def queue_touchpad_sustain(self):
-        '''
-        Queue last touchpad position if it is valid and there is no other
-        frames queued.
-
-        Should be called right before submitting the buffer.
-        '''
-        if self.tp_available_frame == 0:
-            if not self._last_known_tp_frame.get_invalidation_both():
-                self._last_known_tp_frame.seq += 1
-            self.tp_frames[0] = self._last_known_tp_frame
-            self.tp_available_frame += 1
-            
-
-    def queue_touchpad(self, pos0: Optional[Tuple[int, int]] = None, pos1: Optional[Tuple[int, int]] = None, release_pos0: bool = True, release_pos1: bool = True) -> None:
-        '''
-        Queue touchpad press.
-
-        If pos0 and pos1 are 2-tuple of ints, they are used as the new
-        coordinates of the touch. If they are None, release_pos0 and
-        release_pos1 will be checked. If they are True, the corresponding
-        points are released (invalidated), otherwise the points will remain
-        unchanged (held down).
-        '''
-        if self.tp_available_frame >= 3:
-            raise RuntimeError('Touchpad frame queue full.')
-
-        frame = self._last_known_tp_frame
-
-        frame.seq += 1
-
-        if pos0 is not None:
-            frame.set_pos0(pos0)
-            # Validate the touch position if it's previously invalidated and increment the touch counter
-            if frame.get_invalidation_pos0():
-                frame.set_touch_seq_pos0(self._get_touch_autoindex())
-                frame.validate_pos0()
-        elif release_pos0:
-            # Release the touch when required
-            frame.invalidate_pos0()
-        # Otherwise, do nothing (lazy update)
-
-        if pos1 is not None:
-            frame.set_pos1(pos1)
-            if frame.get_invalidation_pos1():
-                frame.set_touch_seq_pos1(self._get_touch_autoindex())
-                frame.validate_pos1()
-        elif release_pos1:
-            frame.invalidate_pos1()
-
-        # Copy last working frame to the report
-        self.tp_frames[self.tp_available_frame] = frame
-        self.tp_available_frame += 1
 
 
 class FeedbackReport(ctypes.LittleEndianStructure):
@@ -607,14 +542,91 @@ class ReportModificationContext(ContextManager[InputReport]):
         self._tracker.input_report_lock.release()
 
 
+class DS4TouchStateTracker:
+    def __init__(self, parent: 'DS4StateTracker'):
+        self._tp_touch_autoindex = 0
+        self._last_known_tp_frame = TouchFrame()
+        self._last_known_tp_frame.clear()
+        self._parent = weakref.proxy(parent)
+
+    def _get_touch_autoindex(self) -> int:
+        rv = self._tp_touch_autoindex
+        self._tp_touch_autoindex += 1
+        self._tp_touch_autoindex &= 0x7f
+        return rv
+
+    def queue_touchpad_sustain(self):
+        with self._parent.start_modify_report() as report:
+            self._queue_touchpad_sustain(report)
+
+    def _queue_touchpad_sustain(self, report: InputReport):
+        '''
+        Queue last touchpad position if it is valid and there is no other
+        frames queued.
+
+        Should be called right before submitting the buffer.
+        '''
+        if report.tp_available_frame == 0:
+            if not self._last_known_tp_frame.get_invalidation_both():
+                self._last_known_tp_frame.seq += 1
+            report.tp_frames[0] = self._last_known_tp_frame
+            report.tp_available_frame += 1
+
+    def queue_touchpad(self, pos0: Optional[Tuple[int, int]] = None, pos1: Optional[Tuple[int, int]] = None, release_pos0: bool = True, release_pos1: bool = True) -> None:
+        '''
+        Queue touchpad press.
+
+        If pos0 and pos1 are 2-tuple of ints, they are used as the new
+        coordinates of the touch. If they are None, release_pos0 and
+        release_pos1 will be checked. If they are True, the corresponding
+        points are released (invalidated), otherwise the points will remain
+        unchanged (held down).
+        '''
+
+        with self._parent.start_modify_report() as report:
+            self._queue_touchpad(report, pos0, pos1, release_pos0, release_pos1)
+
+    def _queue_touchpad(self, report: InputReport, pos0: Optional[Tuple[int, int]] = None, pos1: Optional[Tuple[int, int]] = None, release_pos0: bool = True, release_pos1: bool = True) -> None:
+        if report.tp_available_frame >= 3:
+            raise RuntimeError('Touchpad frame queue full.')
+
+        frame = self._last_known_tp_frame
+
+        frame.seq += 1
+
+        if pos0 is not None:
+            frame.set_pos0(pos0)
+            # Validate the touch position if it's previously invalidated and increment the touch counter
+            if frame.get_invalidation_pos0():
+                frame.set_touch_seq_pos0(self._get_touch_autoindex())
+                frame.validate_pos0()
+        elif release_pos0:
+            # Release the touch when required
+            frame.invalidate_pos0()
+        # Otherwise, do nothing (lazy update)
+
+        if pos1 is not None:
+            frame.set_pos1(pos1)
+            if frame.get_invalidation_pos1():
+                frame.set_touch_seq_pos1(self._get_touch_autoindex())
+                frame.validate_pos1()
+        elif release_pos1:
+            frame.invalidate_pos1()
+
+        # Copy last working frame to the report
+        report.tp_frames[report.tp_available_frame] = frame
+        report.tp_available_frame += 1
+
+
 class DS4StateTracker:
     def __init__(self, ds4key: DS4Key, features: FeatureConfiguration) -> None:
-        # Initialize report A
+        # Initialize report A (use the constructor to fill in the initial fields)
         self._input_report_bufa = bytearray(InputReport())
         logger.debug('Buffer A: %s', hex(id(self._input_report_bufa)))
+        # Bind buffer A to a new report object (Note this will not copy Python objects over)
         self._input_report_a = InputReport.from_buffer(self._input_report_bufa)
 
-        # Copy report A to report B
+        # Initialize report B as well
         self._input_report_bufb = bytearray(InputReport())
         logger.debug('Buffer B: %s', hex(id(self._input_report_bufb)))
         self._input_report_b = InputReport.from_buffer(self._input_report_bufb)
@@ -626,12 +638,13 @@ class DS4StateTracker:
         self._input_report_writable_buf = self._input_report_bufb
 
         # Create input report lock
-        self.input_report_lock = threading.Lock()
+        self.input_report_lock = threading.RLock()
 
         # Create dummy feedback report
         self.feedback_report = FeedbackReport()
 
         # Initialize auth state tracker
+        # TODO move this to its own class (similar as DS4TouchStateTracker)
         self._ds4key = ds4key
         self._nonce = io.BytesIO()
         self._response = io.BytesIO()
@@ -647,6 +660,8 @@ class DS4StateTracker:
 
         # Initialize feature configuration
         self._features = features
+
+        self._touch = DS4TouchStateTracker(self)
 
     @property
     def auth_req_size(self) -> int:
@@ -686,6 +701,10 @@ class DS4StateTracker:
     def input_report_submitting_buf(self) -> bytearray:
         return self._input_report_submitting_buf
 
+    @property
+    def touch(self) -> DS4TouchStateTracker:
+        return self._touch
+
     def auth_reset(self) -> None:
         self._auth_status = 0x10
         self._auth_req_page = 0
@@ -712,6 +731,19 @@ class DS4StateTracker:
 
     def start_modify_report(self) -> ReportModificationContext:
         return ReportModificationContext(self)
+
+    def prepare_for_report_submission(self) -> bytearray:
+        with self.input_report_lock:
+            # Queue the last touchpad points if applicable (for touchpad holding).
+            self.touch.queue_touchpad_sustain()
+            # Swap and copy the buffer.
+            self.swap_buffer_nolock()
+            self.sync_buffer_nolock()
+            # After copying, increment the report index of the writable buffer.
+            self.input_report_writable.inc_report_index()
+            # Also clear the touchpad buffer
+            self.input_report_writable.clear_touchpad()
+        return self.input_report_submitting_buf
 
     def process_feedback(self, data: memoryview) -> None:
         if len(data) != ctypes.sizeof(FeedbackReport):
