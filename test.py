@@ -302,10 +302,14 @@ class DS4Test(unittest.TestCase):
         '''
         One frame 2 point touch.
         '''
-        report = ds4.InputReport()
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain()
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+
+        report = tracker.prepare_for_report_submission()
         actual = bytes(report)[33:61].hex()
         expected = TP_SET_ONE.hex()
         self.assertEqual(actual, expected)
@@ -314,11 +318,15 @@ class DS4Test(unittest.TestCase):
         '''
         Two frames with moving 2 point touch.
         '''
-        report = ds4.InputReport()
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad((150, 200), (250, 300))
-        report.queue_touchpad_sustain()
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+        tracker.touch.queue_touchpad((150, 200), (250, 300))
+
+        report = tracker.prepare_for_report_submission()
         actual = bytes(report)[33:61].hex()
         expected = TP_SET_MULTI.hex()
         self.assertEqual(actual, expected)
@@ -328,11 +336,16 @@ class DS4Test(unittest.TestCase):
         Release one point only will only result in that point being
         invalidated. Only checks the invalidation states.
         '''
-        report = ds4.InputReport()
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        report.queue_touchpad(release_pos0=False)
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
+
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+        tracker.prepare_for_report_submission()
+        tracker.touch.queue_touchpad(release_pos0=False)
+
+        report = tracker.prepare_for_report_submission()
         tp_report = bytes(report)[33:61]
 
         actual = (bool(tp_report[2] & 0x80), bool(tp_report[6] & 0x80))
@@ -344,11 +357,16 @@ class DS4Test(unittest.TestCase):
         Release both points will cause both points to be invalidated. Only
         checks the invalidation states.
         '''
-        report = ds4.InputReport()
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        report.queue_touchpad()
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
+
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+        tracker.prepare_for_report_submission()
+        tracker.touch.queue_touchpad()
+
+        report = tracker.prepare_for_report_submission()
         tp_report = bytes(report)[33:61]
 
         actual = (bool(tp_report[2] & 0x80), bool(tp_report[6] & 0x80))
@@ -360,15 +378,17 @@ class DS4Test(unittest.TestCase):
         Not updating the points will cause them to be held at position with
         frame seq incrementing.
         '''
-        report = ds4.InputReport()
-        report.queue_touchpad((100, 200), (200, 300))
-        # Hold for 2 frames
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        report.queue_touchpad_sustain()
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+        # Hold for 2 frames
+        tracker.prepare_for_report_submission()
+        tracker.prepare_for_report_submission()
+
+        report = tracker.prepare_for_report_submission()
         actual = bytes(report)[33:61].hex()
         expected_bytes = bytearray(TP_SET_ONE)
         # Frame sequence should be 3 now
@@ -380,13 +400,16 @@ class DS4Test(unittest.TestCase):
         '''
         Touch shouldn't be held when there are actual new points.
         '''
-        report = ds4.InputReport()
-        report.queue_touchpad((230, 125), (500, 100))
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain() # this should do nothing now
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
+        tracker.touch.queue_touchpad((230, 125), (500, 100))
+        tracker.prepare_for_report_submission()
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+
+        report = tracker.prepare_for_report_submission() # this should do nothing to the touchpad frames now
         actual = bytes(report)[33:61].hex()
         expected_bytes = bytearray(TP_SET_ONE)
         # Frame sequence should be 2 now
@@ -399,13 +422,16 @@ class DS4Test(unittest.TestCase):
         '''
         Touch shouldn't be held when they are released. Instead they should be invalidated.
         '''
-        report = ds4.InputReport()
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        report.queue_touchpad()
-        report.queue_touchpad_sustain()
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+        tracker.prepare_for_report_submission()
+        tracker.touch.queue_touchpad()
+
+        report = tracker.prepare_for_report_submission()
         actual = bytes(report)[33:61].hex()
         expected = TP_SET_ONE_INVALIDATED.hex()
         self.assertEqual(actual, expected)
@@ -416,18 +442,19 @@ class DS4Test(unittest.TestCase):
 
         This mimics official DS4 behavior.
         '''
-        report = ds4.InputReport()
-        # Initial frame
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        # Release - This is one packet despite all points are invalidated.
-        report.queue_touchpad()
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        # Sustain the invalidated packet. No value should be incrementing.
-        report.queue_touchpad_sustain()
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
+        # Initial frame
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+        tracker.prepare_for_report_submission()
+        # Release - This is one packet despite all points are invalidated.
+        tracker.touch.queue_touchpad()
+        tracker.prepare_for_report_submission()
+        # Sustain the invalidated packet. No value should be incrementing.
+        report = tracker.prepare_for_report_submission()
         actual = bytes(report)[33:61].hex()
         expected = TP_SET_ONE_INVALIDATED.hex()
         self.assertEqual(actual, expected)
@@ -437,19 +464,21 @@ class DS4Test(unittest.TestCase):
         Touch sequence should be increased when different touches are
         registered.
         '''
-        report = ds4.InputReport()
-        # Initial frame
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        # Release - This is one packet despite all points are invalidated.
-        report.queue_touchpad()
-        report.queue_touchpad_sustain()
-        report.clear_touchpad()
-        # Second frame with 2 different points
-        report.queue_touchpad((100, 200), (200, 300))
-        report.queue_touchpad_sustain()
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
 
+        # Initial frame
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+        tracker.prepare_for_report_submission()
+        # Release - This is one packet despite all points are invalidated.
+        tracker.touch.queue_touchpad()
+        tracker.prepare_for_report_submission()
+        # Second frame with 2 different points
+        tracker.touch.queue_touchpad((100, 200), (200, 300))
+
+        report = tracker.prepare_for_report_submission()
         actual = bytes(report)[33:61].hex()
         expected = TP_SET_ONE_AFTER_RELEASE.hex()
         self.assertEqual(actual, expected)

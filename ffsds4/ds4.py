@@ -234,8 +234,6 @@ class InputReport(ctypes.LittleEndianStructure):
         self.buttons[0] ^= self.buttons[0] & 0xf
         self.buttons[0] |= int(position)
 
-    # TODO IMU
-
     def clear_touchpad(self) -> None:
         self.tp_available_frame = 0
         for frame in self.tp_frames:
