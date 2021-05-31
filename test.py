@@ -87,10 +87,9 @@ INITIAL_DS4_INPUT_REPORT = bytes.fromhex('''
 00 00
 0000
 ff
-00
 0000 0000 0000
 0000 0000 0000
-00000000
+0000000000
 08
 0000
 00
@@ -502,6 +501,106 @@ class DS4Test(unittest.TestCase):
         expected = '080001'
         self.assertEqual(actual, expected)
         self.assertEqual(actual_next, expected)
+
+    def test_imu_set_angular_velocity(self):
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
+
+        tracker.imu.set_angular_velocity(90, 90, 90)
+
+        report = tracker.prepare_for_report_submission()
+
+        actual = bytes(report)[13:25].hex()
+        # 1000 * 90(deg) / 61 = approx. 1475
+        # (1475, 1475, 1475), (0, 0, 0)
+        expected = 'c305c305c305000000000000'
+        self.assertEqual(actual, expected)
+
+    def test_imu_set_linear_acceleration(self):
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features)
+
+        tracker.imu.set_linear_acceleration(1, 1, 1)
+
+        report = tracker.prepare_for_report_submission()
+
+        actual = bytes(report)[13:25].hex()
+        # (0, 0, 0), (8192, 8192, 8192)
+        expected = '000000000000002000200020'
+        self.assertEqual(actual, expected)
+
+    def test_imu_set_attitude_position(self):
+        current_time = 0
+        _mock_time_func = lambda: current_time
+
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features, imu_time_func=_mock_time_func)
+        # Put into attitude-position mode
+        tracker.imu.use_attitude_position = True
+
+        # (30, 30, 30), (0, 0, 0) @ 50ms
+        current_time = 0.05
+        tracker.imu.set_attitude_position(current_time, 30, 30, 30, 0, 0, 0)
+        report = tracker.prepare_for_report_submission()
+        actual = bytes(report)[13:25].hex()
+        expected = '6c266c266c26000000000000'
+        self.assertEqual(actual, expected)
+
+        # (45, 45, 45), (3, 4, 5) @ 100ms
+        current_time = 0.10
+        tracker.imu.set_attitude_position(current_time, 45, 45, 45, 3, 4, 5)
+        report = tracker.prepare_for_report_submission()
+        actual = bytes(report)[13:25].hex()
+        expected = '361336133613eb0339058806'
+        self.assertEqual(actual, expected)
+
+        # (60, 50, 10), (6, 10, 5) @ 150ms
+        current_time = 0.15
+        tracker.imu.set_attitude_position(current_time, 60, 50, 10, x=6, y=10)
+        report = tracker.prepare_for_report_submission()
+        actual = bytes(report)[13:25].hex()
+        expected = '361367062dd3eb03d6070000'
+        self.assertEqual(actual, expected)
+
+    def test_imu_sustain(self):
+        current_time = 0
+        _mock_time_func = lambda: current_time
+
+        ds4key_io = io.BytesIO(base64.b64decode(TEST_DS4KEY))
+        ds4key = ds4.DS4Key(ds4key_io)
+        features = ds4.FeatureConfiguration()
+        tracker = ds4.DS4StateTracker(ds4key, features, imu_time_func=_mock_time_func)
+        # Put into attitude-position mode
+        tracker.imu.use_attitude_position = True
+
+        # (30, 30, 30), (0, 0, 0) @ 50ms
+        current_time = 0.05
+        tracker.imu.set_attitude_position(current_time, 30, 30, 30, 0, 0, 0)
+        report = tracker.prepare_for_report_submission()
+        actual = bytes(report)[13:25].hex()
+        expected = '6c266c266c26000000000000'
+        self.assertEqual(actual, expected)
+
+        # Sustain @ 100ms
+        current_time = 0.10
+        report = tracker.prepare_for_report_submission()
+        actual = bytes(report)[13:25].hex()
+        expected = '000000000000000000000000'
+        self.assertEqual(actual, expected)
+
+        # (45, 45, 45), (3, 4, 5) @ 150ms
+        current_time = 0.15
+        tracker.imu.set_attitude_position(current_time, 45, 45, 45, 3, 4, 5)
+        report = tracker.prepare_for_report_submission()
+        actual = bytes(report)[13:25].hex()
+        expected = '361336133613eb0339058806'
+        self.assertEqual(actual, expected)
 
     def test_feature_config_all_enabled(self):
         '''

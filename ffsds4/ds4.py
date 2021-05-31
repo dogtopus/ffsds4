@@ -12,9 +12,10 @@ import itertools
 import io
 import logging
 import mmap
+import time
 import threading
 import weakref
-from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -158,10 +159,9 @@ class InputReport(ctypes.LittleEndianStructure):
     triggers: MutableSequence[int]
     sensor_timestamp: int
     battery: int
-    u13: int
     gyro: MutableSequence[int]
     accel: MutableSequence[int]
-    u26: int
+    u25: MutableSequence[int]
     state_ext: int
     u31: int
     tp_available_frame: int
@@ -175,10 +175,9 @@ class InputReport(ctypes.LittleEndianStructure):
         ('triggers', ctypes.c_uint8 * 2),
         ('sensor_timestamp', ctypes.c_uint16),
         ('battery', ctypes.c_uint8),
-        ('u13', ctypes.c_uint8),
         ('gyro', ctypes.c_int16 * 3),
         ('accel', ctypes.c_int16 * 3),
-        ('u26', ctypes.c_uint32),
+        ('u25', ctypes.c_uint8 * 5),
         ('state_ext', ctypes.c_uint8),
         ('u31', ctypes.c_uint16),
         ('tp_available_frame', ctypes.c_uint8),
@@ -618,10 +617,192 @@ class DS4TouchStateTracker:
         report.tp_available_frame += 1
 
 
+class DS4IMUStateTracker:
+    _position: Tuple[float, float, float]
+    _attitude: Tuple[float, float, float]
+    def __init__(self, parent: 'DS4StateTracker', get_current_time: Callable[[], float] = time.monotonic):
+        self._parent = weakref.proxy(parent)
+        self._sustain = True
+        self._use_attitude_position = False
+
+        self._get_current_time = get_current_time
+
+        self._time_base = self._get_current_time()
+        self._time = self._time_base
+
+        # Coordinates in right-hand coordination system
+        self._position = (0.0, 0.0, 0.0) # x, y, z
+        self._attitude = (0.0, 0.0, 0.0) # pitch, yaw, roll
+        # Position and attitude, integrated back from downsampled integer samples (for compensation)
+        #self._position_int = [0.0, 0.0, 0.0]
+        #self._attitude_int = [0.0, 0.0, 0.0]
+
+        self._motion_s_to_timestamp_mult = 187500 # 1000 * 3000 / 16
+        # Hardcode this for now for further calibration
+        self._max_deg_per_s = 4000
+        self._res_per_deg_per_s = 1000 / 61
+        self._accel_res_per_g = 8192
+
+    def reset_time(self):
+        self._time_base = self._get_current_time()
+        self._time = self._time_base
+
+    @property
+    def use_attitude_position(self):
+        return self._use_attitude_position
+
+    @use_attitude_position.setter
+    def use_attitude_position(self, val: bool):
+        # TODO trigger controller attitude and position reset
+        self._use_attitude_position = val
+
+    def _convert_angular_velocity(self, name: str, value: float) -> int:
+        '''
+        Convert angular velocity from deg/s to internal integer representation.
+        '''
+        rv = round(self._res_per_deg_per_s * value)
+        if rv < -32768 or rv > 32767:
+            raise ValueError(f'Angular velocity for {name} out of range (expecting approx. ({-32768/self._res_per_deg_per_s:.4f}, {32767/self._res_per_deg_per_s:.4f}), got {value})')
+        return rv
+
+    def _convert_linear_acceleration(self, name: str, value: float) -> int:
+        '''
+        Convert linear acceleration from g (*9.8m/s^2) to internal integer representation.
+        '''
+        rv = round(self._accel_res_per_g * value)
+        if rv < -32768 or rv > 32767:
+            raise ValueError(f'Linear acceleration for {name} axis out of range (expecting approx. ({-32768/self._accel_res_per_g:.4f}, {32767/self._accel_res_per_g:.4f}), got {value})')
+        return rv
+
+    def set_angular_velocity(self, pitch: Optional[float] = None, yaw: Optional[float] = None, roll: Optional[float] = None):
+        '''
+        Set raw angular velocity (in deg/s).
+        '''
+        if self._use_attitude_position:
+            raise RuntimeError('Cannot set angular velocity in attitude-position mode.')
+        self._set_angular_velocity(pitch, yaw, roll)
+
+    def _set_angular_velocity(self, pitch: Optional[float] = None, yaw: Optional[float] = None, roll: Optional[float] = None):
+        pitch_in_res: Optional[int] = None
+        yaw_in_res: Optional[int] = None
+        roll_in_res: Optional[int] = None
+
+        if pitch is not None:
+            pitch_in_res = self._convert_angular_velocity('pitch', pitch)
+        if yaw is not None:
+            yaw_in_res = self._convert_angular_velocity('yaw', yaw)
+        if roll is not None:
+            roll_in_res = self._convert_angular_velocity('roll', roll)
+
+        with self._parent.start_modify_report() as report:
+            if pitch_in_res is not None:
+                report.gyro[0] = pitch_in_res
+            if yaw_in_res is not None:
+                report.gyro[1] = yaw_in_res
+            if roll_in_res is not None:
+                report.gyro[2] = roll_in_res
+
+    def set_linear_acceleration(self, x: Optional[float] = None, y: Optional[float] = None, z: Optional[float] = None):
+        '''
+        Set raw linear acceleration (in g).
+        '''
+        if self._use_attitude_position:
+            raise RuntimeError('Cannot set angular velocity in attitude-position mode.')
+        self._set_linear_acceleration(x, y, z)
+
+    def _set_linear_acceleration(self, x: Optional[float] = None, y: Optional[float] = None, z: Optional[float] = None):
+        x_in_res: Optional[int] = None
+        y_in_res: Optional[int] = None
+        z_in_res: Optional[int] = None
+        if x is not None:
+            x_in_res = self._convert_linear_acceleration('x', x)
+        if y is not None:
+            y_in_res = self._convert_linear_acceleration('y', y)
+        if z is not None:
+            z_in_res = self._convert_linear_acceleration('z', z)
+
+        with self._parent.start_modify_report() as report:
+            if x is not None:
+                report.accel[0] = x_in_res
+            if y is not None:
+                report.accel[1] = y_in_res
+            if z is not None:
+                report.accel[2] = z_in_res
+
+    def set_attitude_position(self, current_time: float,
+                                    pitch: Optional[float] = None,
+                                    yaw: Optional[float] = None,
+                                    roll: Optional[float] = None,
+                                    x: Optional[float] = None,
+                                    y: Optional[float] = None,
+                                    z: Optional[float] = None):
+        '''
+        Set the current attitude (in deg) and position (in mm) and the current
+        timestamp (must be monotonic). Intended to be driven by tween objects
+        from the sequencer to simulate real IMU.
+
+        Usually it's the tweens' responsibility to figure out the current time
+        in order to minimize jitter. Therefore the time must be specified by
+        the caller (e.g. tweens).
+        '''
+        difference = current_time - self._time
+        if difference < 0:
+            raise ValueError('current_time must be monotonic.')
+
+        curr_attitude: Tuple[float, float, float] = (
+            pitch if pitch is not None else self._attitude[0],
+            yaw if yaw is not None else self._attitude[1],
+            roll if roll is not None else self._attitude[2],
+        )
+        curr_position: Tuple[float, float, float] = (
+            x if x is not None else self._position[0],
+            y if y is not None else self._position[1],
+            z if z is not None else self._position[2],
+        )
+        diff_attitude: Tuple[float, float, float] = cast(Tuple[float, float, float], tuple((curr - prev) / difference for curr, prev in zip(curr_attitude, self._attitude)))
+        # mm/s^2 to g: / 9.8 m/s^2 / 1000mm/m
+        diff2_position: Tuple[float, float, float] = cast(Tuple[float, float, float], tuple((curr - prev) / difference**2 / 9.8 / 1000 for curr, prev in zip(curr_position, self._position)))
+        # TODO add gravity and compensation for rounding errors
+        diff_p, diff_y, diff_r = diff_attitude
+        diff2_x, diff2_y, diff2_z = diff2_position
+
+        # Acquire the RLock here so the change happens atomically (no out of sync gyro/accel reports)
+        with self._parent.start_modify_report() as report:
+            self._set_angular_velocity(diff_p, diff_y, diff_r)
+            self._set_linear_acceleration(diff2_x, diff2_y, diff2_z)
+            report.sensor_timestamp = round((current_time - self._time_base) * self._motion_s_to_timestamp_mult) & 0xffff
+            # Clear the sustain bit
+            self._sustain = False
+
+        self._attitude = curr_attitude
+        self._position = curr_position
+        self._time = current_time
+
+    def get_attitude_position(self) -> Tuple[float, float, float, float, float, float, float]:
+        return (
+            self._time,
+            self._attitude[0], self._attitude[1], self._attitude[2],
+            self._position[0], self._position[1], self._position[2],
+        )
+
+    def set_attitude_position_sustain(self) -> None:
+        if not self._use_attitude_position:
+            # Does noting when not in attitude-position mode.
+            return
+
+        # Acquire lock to make sure we're not doing a sustain during an IMU report update (from e.g. the sequencer).
+        with self._parent.start_modify_report():
+            if self._sustain:
+                self.set_attitude_position(self._get_current_time())
+
+            # Set the sustain bit.
+            self._sustain = True
+
+
 class DS4StateTracker:
     _input_report_bufa: UDCFriendlyBuffer
     _input_report_bufb: UDCFriendlyBuffer
-    def __init__(self, ds4key: DS4Key, features: FeatureConfiguration, aligned: bool = False) -> None:
+    def __init__(self, ds4key: DS4Key, features: FeatureConfiguration, aligned: bool = False, imu_time_func: Optional[Callable[[], float]] = None) -> None:
         if aligned:
             # Use report constructor to create a template
             report_template = bytes(InputReport())
@@ -678,6 +859,7 @@ class DS4StateTracker:
         self._features = features
 
         self._touch = DS4TouchStateTracker(self)
+        self._imu = DS4IMUStateTracker(self, get_current_time=time.monotonic if imu_time_func is None else imu_time_func)
 
     @property
     def auth_req_size(self) -> int:
@@ -721,6 +903,10 @@ class DS4StateTracker:
     def touch(self) -> DS4TouchStateTracker:
         return self._touch
 
+    @property
+    def imu(self) -> DS4IMUStateTracker:
+        return self._imu
+
     def auth_reset(self) -> None:
         self._auth_status = 0x10
         self._auth_req_page = 0
@@ -751,7 +937,8 @@ class DS4StateTracker:
     def prepare_for_report_submission(self) -> UDCFriendlyBuffer:
         with self.input_report_lock:
             # Queue the last touchpad points if applicable (for touchpad holding).
-            self.touch.queue_touchpad_sustain()
+            self._touch.queue_touchpad_sustain()
+            self._imu.set_attitude_position_sustain()
             # Swap and copy the buffer.
             self.swap_buffer_nolock()
             self.sync_buffer_nolock()

@@ -6,9 +6,9 @@ plz let me on PSXHAX again.
 
 ## Usage
 
-Make sure the UDC driver module for your board and `libcomposite` module are loaded. If testing on PC, use `dummy_hcd`.
+Make sure the UDC driver module for your board and `libcomposite` module are loaded. If testing on PC, use `dummy_hcd` as the UDC driver.
 
-To start, run:
+To start ffsds4 using pipenv, run:
 
 ```sh
 pipenv install # after checkout
@@ -29,4 +29,4 @@ pipenv run package-onefile
 
 Note that targeting Arm-based hardware requires the use of emulators and like (such as QEMU) or a real Arm-based hardware that runs a Linux version similar enough to the target board.
 
-If ffsds4 fails with `-EBUSY`, try to unload `g_ffs`. If the module is built-in (e.g. on Manjaro ARM for Pinephone), blacklist `gfs_init` function by adding `initcall_blacklist=gfs_init` to the kernel cmdline and reboot.
+If ffsds4 fails with `-EBUSY`, try unloading the kernel module `g_ffs`. If the module is built-in (e.g. on Manjaro ARM for Pinephone), blacklist `gfs_init` function by adding `initcall_blacklist=gfs_init` to the kernel cmdline and reboot the system.
