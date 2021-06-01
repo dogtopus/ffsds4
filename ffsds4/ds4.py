@@ -15,6 +15,7 @@ import mmap
 import time
 import threading
 import weakref
+import zlib # for crc32
 from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast
 from concurrent import futures
 
@@ -977,6 +978,10 @@ class DS4StateTracker:
     def set_challenge(self, ep0: io.FileIO) -> None:
         buf = AuthReport()
         ep0.readinto(buf) #type: ignore[arg-type]
+        crc = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
+        if crc != buf.crc32:
+            # TODO do we need to do more here?
+            logger.warning("Invalid CRC32.")
         if buf.type != int(ReportType.set_challenge):
             raise TypeError('Invalid request type for request set_challenge.')
         if buf.page != 0 and buf.seq != self._auth_seq:
@@ -995,6 +1000,7 @@ class DS4StateTracker:
         buf = AuthStatusReport(type=ReportType.get_auth_status)
         buf.seq = self._auth_seq
         buf.status = self._auth_status
+        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthStatusReport) - ctypes.sizeof(ctypes.c_uint32)])
         ep0.write(buf) #type: ignore[arg-type]
 
     def get_response(self, ep0: io.FileIO) -> None:
@@ -1005,6 +1011,7 @@ class DS4StateTracker:
             logger.warning('Attempt to read outside of the auth response buffer.')
         if self._auth_resp_page == self._auth_resp_max_page:
             self.auth_reset()
+        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
         ep0.write(buf) #type: ignore[arg-type]
         if self._auth_status == 0x0:
             self._auth_resp_page += 1
