@@ -16,7 +16,7 @@ import time
 import threading
 import weakref
 import zlib # for crc32
-from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast, ClassVar, TypeVar
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -72,6 +72,12 @@ InputTargetType = Union[
     Type[DPadPosition],
     str,
 ]
+
+
+# Hack for ctypes struct field type
+class StructFieldLike:
+    offset: int
+    size: int
 
 
 class TouchFrame(ctypes.LittleEndianStructure):
@@ -155,6 +161,7 @@ class TouchFrame(ctypes.LittleEndianStructure):
 
 class InputReport(ctypes.LittleEndianStructure):
     type: int
+    # Hack around ctypes array typing limitation by making the fields MutableSequence of ints instead
     sticks: MutableSequence[int]
     buttons: MutableSequence[int]
     triggers: MutableSequence[int]
@@ -401,6 +408,12 @@ class FeatureConfiguration(ctypes.LittleEndianStructure):
 
 
 class AuthPageSizeReport(ctypes.LittleEndianStructure):
+    type: int
+    u1: int
+    size_challenge: int
+    size_response: int
+    u4: MutableSequence[int]
+
     _fields_ = (
         ('type', ctypes.c_uint8),
         ('u1', ctypes.c_uint8),
@@ -412,6 +425,13 @@ class AuthPageSizeReport(ctypes.LittleEndianStructure):
 
 
 class AuthReport(ctypes.LittleEndianStructure):
+    type: int
+    seq: int
+    page: int
+    sbz: int
+    data: ctypes.Array[ctypes.c_uint8] # not exactly but close enough
+    crc32: int
+
     _fields_ = (
         ('type', ctypes.c_uint8),
         ('seq', ctypes.c_uint8),
@@ -424,6 +444,12 @@ class AuthReport(ctypes.LittleEndianStructure):
 
 
 class AuthStatusReport(ctypes.LittleEndianStructure):
+    type: int
+    seq: int
+    status: int
+    padding: MutableSequence[int]
+    crc32: int
+
     _fields_ = (
         ('type', ctypes.c_uint8),
         ('seq', ctypes.c_uint8),
@@ -435,6 +461,10 @@ class AuthStatusReport(ctypes.LittleEndianStructure):
 
 
 class DS4IdentityBlock(ctypes.LittleEndianStructure):
+    serial: ctypes.Array[ctypes.c_uint8]
+    modulus: ctypes.Array[ctypes.c_uint8]
+    exponent: ctypes.Array[ctypes.c_uint8]
+
     _pack_ = 1
     _fields_ = (
         ('serial', ctypes.c_uint8 * 0x10),
@@ -444,6 +474,12 @@ class DS4IdentityBlock(ctypes.LittleEndianStructure):
 
 
 class DS4PrivateKeyBlock(ctypes.LittleEndianStructure):
+    p: ctypes.Array[ctypes.c_uint8]
+    q: ctypes.Array[ctypes.c_uint8]
+    dp1: ctypes.Array[ctypes.c_uint8]
+    dq1: ctypes.Array[ctypes.c_uint8]
+    pq: ctypes.Array[ctypes.c_uint8]
+
     _pack_ = 1
     _fields_ = (
         ('p', ctypes.c_uint8 * 0x80),
@@ -455,6 +491,9 @@ class DS4PrivateKeyBlock(ctypes.LittleEndianStructure):
 
 
 class DS4SignedIdentityBlock(ctypes.LittleEndianStructure):
+    identity: DS4IdentityBlock
+    sig_identity: ctypes.Array[ctypes.c_uint8]
+
     _pack_ = 1
     _fields_ = (
         ('identity', DS4IdentityBlock),
@@ -463,6 +502,10 @@ class DS4SignedIdentityBlock(ctypes.LittleEndianStructure):
 
 
 class DS4FullKeyBlock(ctypes.LittleEndianStructure):
+    identity: DS4IdentityBlock
+    sig_identity: ctypes.Array[ctypes.c_uint8]
+    private_key: DS4PrivateKeyBlock
+
     _pack_ = 1
     _fields_ = (
         ('identity', DS4IdentityBlock),
@@ -472,6 +515,9 @@ class DS4FullKeyBlock(ctypes.LittleEndianStructure):
 
 
 class DS4Response(ctypes.LittleEndianStructure):
+    sig: ctypes.Array[ctypes.c_uint8]
+    signed_identity: DS4SignedIdentityBlock
+
     _pack_ = 1
     _fields_ = (
         ('sig', ctypes.c_uint8 * 0x100),
@@ -523,7 +569,7 @@ class DS4Key:
         sig = self._pss.sign(sha)
 
         buf = DS4Response()
-        ctypes.memmove(buf.sig, sig, DS4Response.sig.size)
+        ctypes.memmove(buf.sig, sig, ctypes.sizeof(DS4Response.sig))
         buf.signed_identity = self._ds4id
         return buf
 
@@ -850,8 +896,8 @@ class DS4StateTracker:
         self._auth_seq = 0
         self._auth_req_page = 0
         self._auth_resp_page = 0
-        self._auth_req_size = AuthReport.data.size
-        self._auth_resp_size = AuthReport.data.size
+        self._auth_req_size = cast(StructFieldLike, AuthReport.data).size
+        self._auth_resp_size = cast(StructFieldLike, AuthReport.data).size
         self._auth_req_max_page = -(-AUTH_REQ_SIZE // self._auth_req_size) - 1
         self._auth_resp_max_page = -(-AUTH_RESP_SIZE // self._auth_req_size) - 1
         self._auth_rsa_task = futures.ThreadPoolExecutor()
@@ -868,7 +914,7 @@ class DS4StateTracker:
 
     @auth_req_size.setter
     def auth_req_size(self, val: int) -> None:
-        if val > AuthReport.data.size:
+        if val > cast(StructFieldLike, AuthReport.data).size:
             raise ValueError('Data size too big')
         self._auth_req_size = val
         self._auth_req_max_page = -(-AUTH_REQ_SIZE // val) - 1
@@ -879,7 +925,7 @@ class DS4StateTracker:
 
     @auth_resp_size.setter
     def auth_resp_size(self, val) -> None:
-        if val > AuthReport.data.size:
+        if val > cast(StructFieldLike, AuthReport.data).size:
             raise ValueError('Data size too big')
         self._auth_resp_size = val
         self._auth_resp_max_page = -(-AUTH_RESP_SIZE // val) - 1
@@ -990,7 +1036,7 @@ class DS4StateTracker:
             logger.warning("Out of order challenge write.")
         self._auth_seq = buf.seq
         valid_data_size = min(max(0, AUTH_REQ_SIZE - buf.page * self._auth_req_size), self._auth_req_size)
-        self._nonce.write(memoryview(buf.data)[:valid_data_size])
+        self._nonce.write(memoryview(cast(bytearray, buf.data))[:valid_data_size]) # bytearray-like
         if self._auth_req_page == self._auth_req_max_page:
             self._auth_status = 0x01
             self._auth_rsa_task.submit(self.prepare_challenge)
@@ -1007,7 +1053,7 @@ class DS4StateTracker:
         buf = AuthReport(type=ReportType.get_response)
         buf.seq = self._auth_seq
         buf.page = self._auth_resp_page
-        if self._response.readinto(buf.data) == 0:
+        if self._response.readinto(cast(bytearray, buf.data)) == 0: # bytearray-like
             logger.warning('Attempt to read outside of the auth response buffer.')
         if self._auth_resp_page == self._auth_resp_max_page:
             self.auth_reset()
