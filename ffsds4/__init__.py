@@ -206,7 +206,7 @@ def create_gadget_instance(args):
             },
         )
     except FileNotFoundError:
-        logger.error('Some of the configfs/sysfs entries used by FunctionFS are missing. Did you forget to load the drivers?')
+        logger.error('Some of the ConfigFS entries used by FunctionFS are missing. Did you forget to load the device drivers?')
         raise
 
 def parse_loglevel(level):
@@ -232,9 +232,20 @@ def main():
     _p, args = parse_args()
     logging.basicConfig(level=args.log_level)
 
-    with create_gadget_instance(args) as gadget:
-        logger.info('Gadget ready, waiting for function to exit.')
-        try:
-            gadget.waitForever()
-        finally:
-            logger.info('Gadget exiting.')
+    
+
+
+    try:
+        with create_gadget_instance(args) as gadget:
+            logger.info('Gadget ready, waiting for function to exit.')
+            try:
+                gadget.waitForever()
+            finally:
+                logger.info('Gadget exiting.')
+    except FileNotFoundError:
+        logger.error('Unable to locate ConfigFS gadget control directory. Did you forget to load libcomposite?')
+        raise
+    except OSError as e:
+        if e.errno == errno.EBUSY:
+            logger.error('EBUSY raised when creating FunctionFS entries. Try unloading g_ffs.')
+        raise

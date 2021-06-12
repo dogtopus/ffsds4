@@ -162,7 +162,7 @@ class Sequencer:
         self._event_queue_new = HeapqWrapper()
         self._holding = {}
         self._tick_interval = 0.004
-        self._min_release_time = self._tick_interval * 2
+        self._min_release_time = max(1 / 60, self._tick_interval * 4)
         self._tick_thread = threading.Thread(target=self._tick)
         self._shutdown_flag = False
         self._mutex = threading.RLock()

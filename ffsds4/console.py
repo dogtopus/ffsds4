@@ -27,18 +27,22 @@ ConsoleArgparseDoMethod = Callable[['Console', argparse.Namespace], Optional[boo
 
 def create_parser() -> argparse.ArgumentParser:
     button_choices = tuple(item.name for item in ds4.ButtonType)
+    dpad_choices = tuple(item.name for item in ds4.DPadPosition)
 
     p = argparse.ArgumentParser(prog='')
     sps = p.add_subparsers(dest='cmd', help='Command.')
 
     sp = sps.add_parser('press', help='Press the specified buttons.')
     sp.add_argument('-t', '--hold-time', type=float, help='Time to hold the buttons.')
+    sp.add_argument('-d', '--dpad', choices=dpad_choices, help='Press DPad towards specified direction.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to press.')
 
     sp = sps.add_parser('hold', help='Press and hold a button indefinitely.')
+    sp.add_argument('-d', '--dpad', choices=dpad_choices, help='Hold DPad towards specified direction.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
 
     sp = sps.add_parser('release', help='Unconditionally release previously held buttons.')
+    sp.add_argument('-d', '--dpad', help='Reset DPad direction to neutral.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
     return p
 
