@@ -6,7 +6,7 @@ plz let me on PSXHAX again.
 
 ## Usage
 
-Make sure the UDC driver module for your board and `libcomposite` module are loaded. If testing on PC, use `dummy_hcd` as the UDC driver.
+Make sure the UDC driver module for your board and `libcomposite` module are loaded. If testing on PC, use `dummy_hcd` as the UDC driver. Also, make sure `libaio` is installed in your target and development systems since `python-functionfs` requires it.
 
 To start ffsds4 using pipenv, run:
 
