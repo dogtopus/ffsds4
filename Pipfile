@@ -23,3 +23,8 @@ start-with-sudo = "sudo ./start.py"
 test = "python test.py"
 package = "pyinstaller --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' start.py"
 package-onefile = "pyinstaller -n ffsds4 --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' --onefile start.py"
+# TODO contribute type stubs to functionfs
+mypy = "mypy --ignore-missing-imports ffsds4"
+lint = "pylint ffsds4"
+# TODO should adopt fail under for this
+lint-minimal = "pylint --disable=all --enable=E,F ffsds4"
