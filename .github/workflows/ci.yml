@@ -44,5 +44,5 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: sega-slider-windows-amd64
+        name: ffsds4-amd64
         path: dist/*
