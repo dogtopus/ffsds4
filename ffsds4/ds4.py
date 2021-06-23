@@ -569,7 +569,7 @@ class DS4Key:
         sig = self._pss.sign(sha)
 
         buf = DS4Response()
-        ctypes.memmove(buf.sig, sig, DS4Response.sig.size)
+        ctypes.memmove(buf.sig, sig, cast(StructFieldLike, DS4Response.sig).size)
         buf.signed_identity = self._ds4id
         return buf
 
