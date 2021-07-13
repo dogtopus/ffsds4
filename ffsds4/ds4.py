@@ -311,7 +311,7 @@ class ControllerFeature(enum.IntFlag):
 
 class FeatureConfiguration(ctypes.LittleEndianStructure):
     type: int
-    magic_0x2721: int
+    hid_usage: int
     u3: int
     features: Union[int, ControllerFeature]
     controller_type: Union[int, ControllerType]
@@ -324,7 +324,7 @@ class FeatureConfiguration(ctypes.LittleEndianStructure):
 
     _fields_ = (
         ('type', ctypes.c_uint8),
-        ('magic_0x2721', ctypes.c_uint16),
+        ('hid_usage', ctypes.c_uint16),
         ('u3', ctypes.c_uint8),
         ('features', ctypes.c_uint8),
         ('controller_type', ctypes.c_uint8),
@@ -347,7 +347,7 @@ class FeatureConfiguration(ctypes.LittleEndianStructure):
         self.features = 0
         actual_kwargs = dict(
             type=ReportType.get_feature_configuration,
-            magic_0x2721=0x2721,
+            hid_usage=0x2721,
             magic_0x0d0d=0x0d0d,
         )
         actual_kwargs.update(ctypes_kwargs)
