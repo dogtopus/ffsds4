@@ -137,11 +137,11 @@ class DS4Function(functionfs.HIDFunction):
         report_type, report_id = ((value >> 8) & 0xff), (value & 0xff)
         if report_type == 0x03:
             if report_id == ds4.ReportType.get_auth_page_size:
-                self.tracker.get_page_size(self.ep0)
+                self.tracker.auth.get_page_size(self.ep0)
             elif report_id == ds4.ReportType.get_auth_status:
-                self.tracker.get_auth_status(self.ep0)
+                self.tracker.auth.get_status(self.ep0)
             elif report_id == ds4.ReportType.get_response:
-                self.tracker.get_response(self.ep0)
+                self.tracker.auth.get_response(self.ep0)
             elif report_id == ds4.ReportType.get_feature_configuration:
                 self.tracker.get_feature_configuration(self.ep0)
 
@@ -152,7 +152,7 @@ class DS4Function(functionfs.HIDFunction):
         report_type, report_id = ((value >> 8) & 0xff), (value & 0xff)
         if report_type == 0x03:
             if report_id == ds4.ReportType.set_challenge:
-                self.tracker.set_challenge(self.ep0)
+                self.tracker.auth.set_challenge(self.ep0)
 
     def onEnable(self):
         """

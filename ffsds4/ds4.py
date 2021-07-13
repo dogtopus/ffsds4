@@ -846,6 +846,111 @@ class DS4IMUStateTracker:
             self._sustain = True
 
 
+class DS4AuthStateTracker:
+    def __init__(self, ds4key: DS4Key):
+        self._ds4key = ds4key
+        self._nonce = io.BytesIO()
+        self._response = io.BytesIO()
+        self._status = 0x10
+        self._seq = 0
+        self._req_page = 0
+        self._resp_page = 0
+        self._req_size = cast(StructFieldLike, AuthReport.data).size
+        self._resp_size = cast(StructFieldLike, AuthReport.data).size
+        self._req_max_page = -(-AUTH_REQ_SIZE // self._req_size) - 1
+        self._resp_max_page = -(-AUTH_RESP_SIZE // self._req_size) - 1
+        self._rsa_task = futures.ThreadPoolExecutor()
+
+    @property
+    def req_size(self) -> int:
+        return self._req_size
+
+    @req_size.setter
+    def req_size(self, val: int) -> None:
+        if val > cast(StructFieldLike, AuthReport.data).size:
+            raise ValueError('Data size too big')
+        self._req_size = val
+        self._req_max_page = -(-AUTH_REQ_SIZE // val) - 1
+
+    @property
+    def resp_size(self) -> int:
+        return self._resp_size
+
+    @resp_size.setter
+    def resp_size(self, val) -> None:
+        if val > cast(StructFieldLike, AuthReport.data).size:
+            raise ValueError('Data size too big')
+        self._resp_size = val
+        self._resp_max_page = -(-AUTH_RESP_SIZE // val) - 1
+
+    def reset(self) -> None:
+        self._status = 0x10
+        self._req_page = 0
+        self._resp_page = 0
+        self._nonce.seek(0)
+        self._response.seek(0)
+        self._nonce.truncate(0)
+        self._response.truncate(0)
+
+    def prepare_challenge(self) -> None:
+        try:
+            self._response.write(self._ds4key.sign_challenge(self._nonce.getvalue())) #type: ignore[arg-type]
+            self._response.seek(0)
+        except Exception:
+            logger.exception('Challenge signing failed with an exception.')
+            # TODO
+            self._status = 0xff
+        else:
+            self._status = 0x0
+
+    def get_page_size(self, ep0: io.FileIO) -> None:
+        buf = AuthPageSizeReport(type=ReportType.get_auth_page_size)
+        buf.size_challenge = self.req_size
+        buf.size_response = self.resp_size
+        ep0.write(buf) #type: ignore[arg-type]
+
+    def set_challenge(self, ep0: io.FileIO) -> None:
+        buf = AuthReport()
+        ep0.readinto(buf) #type: ignore[arg-type]
+        crc = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
+        if crc != buf.crc32:
+            # TODO do we need to do more here?
+            logger.warning("Invalid CRC32.")
+        if buf.type != int(ReportType.set_challenge):
+            raise TypeError('Invalid request type for request set_challenge.')
+        if buf.page != 0 and buf.seq != self._seq:
+            logger.warning("Inconsistent sequence value.")
+        elif buf.page != self._req_page:
+            logger.warning("Out of order challenge write.")
+        self._seq = buf.seq
+        valid_data_size = min(max(0, AUTH_REQ_SIZE - buf.page * self._req_size), self._req_size)
+        self._nonce.write(memoryview(cast(bytearray, buf.data))[:valid_data_size]) # bytearray-like
+        if self._req_page == self._req_max_page:
+            self._status = 0x01
+            self._rsa_task.submit(self.prepare_challenge)
+        self._req_page += 1
+
+    def get_status(self, ep0: io.FileIO) -> None:
+        buf = AuthStatusReport(type=ReportType.get_auth_status)
+        buf.seq = self._seq
+        buf.status = self._status
+        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthStatusReport) - ctypes.sizeof(ctypes.c_uint32)])
+        ep0.write(buf) #type: ignore[arg-type]
+
+    def get_response(self, ep0: io.FileIO) -> None:
+        buf = AuthReport(type=ReportType.get_response)
+        buf.seq = self._seq
+        buf.page = self._resp_page
+        if self._response.readinto(cast(bytearray, buf.data)) == 0: # bytearray-like
+            logger.warning('Attempt to read outside of the auth response buffer.')
+        if self._resp_page == self._resp_max_page:
+            self.reset()
+        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
+        ep0.write(buf) #type: ignore[arg-type]
+        if self._status == 0x0:
+            self._resp_page += 1
+
+
 class DS4StateTracker:
     _input_report_bufa: UDCFriendlyBuffer
     _input_report_bufb: UDCFriendlyBuffer
@@ -888,47 +993,13 @@ class DS4StateTracker:
         self.feedback_report = FeedbackReport()
 
         # Initialize auth state tracker
-        # TODO move this to its own class (similar as DS4TouchStateTracker)
-        self._ds4key = ds4key
-        self._nonce = io.BytesIO()
-        self._response = io.BytesIO()
-        self._auth_status = 0x10
-        self._auth_seq = 0
-        self._auth_req_page = 0
-        self._auth_resp_page = 0
-        self._auth_req_size = cast(StructFieldLike, AuthReport.data).size
-        self._auth_resp_size = cast(StructFieldLike, AuthReport.data).size
-        self._auth_req_max_page = -(-AUTH_REQ_SIZE // self._auth_req_size) - 1
-        self._auth_resp_max_page = -(-AUTH_RESP_SIZE // self._auth_req_size) - 1
-        self._auth_rsa_task = futures.ThreadPoolExecutor()
+        self._auth = DS4AuthStateTracker(ds4key)
 
         # Initialize feature configuration
         self._features = features
 
         self._touch = DS4TouchStateTracker(self)
         self._imu = DS4IMUStateTracker(self, get_current_time=time.monotonic if imu_time_func is None else imu_time_func)
-
-    @property
-    def auth_req_size(self) -> int:
-        return self._auth_req_size
-
-    @auth_req_size.setter
-    def auth_req_size(self, val: int) -> None:
-        if val > cast(StructFieldLike, AuthReport.data).size:
-            raise ValueError('Data size too big')
-        self._auth_req_size = val
-        self._auth_req_max_page = -(-AUTH_REQ_SIZE // val) - 1
-
-    @property
-    def auth_resp_size(self) -> int:
-        return self._auth_resp_size
-
-    @auth_resp_size.setter
-    def auth_resp_size(self, val) -> None:
-        if val > cast(StructFieldLike, AuthReport.data).size:
-            raise ValueError('Data size too big')
-        self._auth_resp_size = val
-        self._auth_resp_max_page = -(-AUTH_RESP_SIZE // val) - 1
 
     @property
     def input_report_writable(self) -> InputReport:
@@ -947,21 +1018,16 @@ class DS4StateTracker:
         return self._input_report_submitting_buf
 
     @property
+    def auth(self) -> DS4AuthStateTracker:
+        return self._auth
+
+    @property
     def touch(self) -> DS4TouchStateTracker:
         return self._touch
 
     @property
     def imu(self) -> DS4IMUStateTracker:
         return self._imu
-
-    def auth_reset(self) -> None:
-        self._auth_status = 0x10
-        self._auth_req_page = 0
-        self._auth_resp_page = 0
-        self._nonce.seek(0)
-        self._response.seek(0)
-        self._nonce.truncate(0)
-        self._response.truncate(0)
 
     def swap_buffer(self) -> None:
         with self.input_report_lock:
@@ -1003,62 +1069,4 @@ class DS4StateTracker:
 
     def get_feature_configuration(self, ep0: io.FileIO) -> None:
         ep0.write(self._features) #type: ignore[arg-type]
-
-    def prepare_challenge(self) -> None:
-        try:
-            self._response.write(self._ds4key.sign_challenge(self._nonce.getvalue())) #type: ignore[arg-type]
-            self._response.seek(0)
-        except Exception:
-            logger.exception('Challenge signing failed with an exception.')
-            # TODO
-            self._auth_status = 0xff
-        else:
-            self._auth_status = 0x0
-
-    def get_page_size(self, ep0: io.FileIO) -> None:
-        buf = AuthPageSizeReport(type=ReportType.get_auth_page_size)
-        buf.size_challenge = self.auth_req_size
-        buf.size_response = self.auth_resp_size
-        ep0.write(buf) #type: ignore[arg-type]
-
-    def set_challenge(self, ep0: io.FileIO) -> None:
-        buf = AuthReport()
-        ep0.readinto(buf) #type: ignore[arg-type]
-        crc = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
-        if crc != buf.crc32:
-            # TODO do we need to do more here?
-            logger.warning("Invalid CRC32.")
-        if buf.type != int(ReportType.set_challenge):
-            raise TypeError('Invalid request type for request set_challenge.')
-        if buf.page != 0 and buf.seq != self._auth_seq:
-            logger.warning("Inconsistent sequence value.")
-        elif buf.page != self._auth_req_page:
-            logger.warning("Out of order challenge write.")
-        self._auth_seq = buf.seq
-        valid_data_size = min(max(0, AUTH_REQ_SIZE - buf.page * self._auth_req_size), self._auth_req_size)
-        self._nonce.write(memoryview(cast(bytearray, buf.data))[:valid_data_size]) # bytearray-like
-        if self._auth_req_page == self._auth_req_max_page:
-            self._auth_status = 0x01
-            self._auth_rsa_task.submit(self.prepare_challenge)
-        self._auth_req_page += 1
-
-    def get_auth_status(self, ep0: io.FileIO) -> None:
-        buf = AuthStatusReport(type=ReportType.get_auth_status)
-        buf.seq = self._auth_seq
-        buf.status = self._auth_status
-        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthStatusReport) - ctypes.sizeof(ctypes.c_uint32)])
-        ep0.write(buf) #type: ignore[arg-type]
-
-    def get_response(self, ep0: io.FileIO) -> None:
-        buf = AuthReport(type=ReportType.get_response)
-        buf.seq = self._auth_seq
-        buf.page = self._auth_resp_page
-        if self._response.readinto(cast(bytearray, buf.data)) == 0: # bytearray-like
-            logger.warning('Attempt to read outside of the auth response buffer.')
-        if self._auth_resp_page == self._auth_resp_max_page:
-            self.auth_reset()
-        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
-        ep0.write(buf) #type: ignore[arg-type]
-        if self._auth_status == 0x0:
-            self._auth_resp_page += 1
 

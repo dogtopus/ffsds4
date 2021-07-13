@@ -190,7 +190,7 @@ class DS4Test(unittest.TestCase):
 
         challenge = io.BytesIO(b'\x00' * 256)
         page = 0
-        tracker.auth_reset()
+        tracker.auth.reset()
         while challenge.tell() < 256:
             data = bytearray(56)
             challenge.readinto(data)
@@ -199,12 +199,12 @@ class DS4Test(unittest.TestCase):
             packet += crc.to_bytes(4, 'little')
             assert len(packet) == 64, 'Test case bug: invalid challenge packet length.'
             packet_io = io.BytesIO(packet)
-            tracker.set_challenge(packet_io)
+            tracker.auth.set_challenge(packet_io)
             page += 1
         wait_count = 0
         while True:
             response_io = io.BytesIO()
-            tracker.get_auth_status(response_io)
+            tracker.auth.get_status(response_io)
             response = response_io.getvalue()
             self.assertEqual(len(response), 16, 'Wrong GetAuthStatus length.')
             self.assertEqual(response[0], 0xf2, 'Invalid GetAuthStatus magic.')
@@ -222,7 +222,7 @@ class DS4Test(unittest.TestCase):
         response_io_full = io.BytesIO()
         while remaining > 0:
             response_io = io.BytesIO()
-            tracker.get_response(response_io)
+            tracker.auth.get_response(response_io)
             response = response_io.getvalue()
             self.assertEqual(len(response), 64, 'Wrong GetResponse length.')
             self.assertEqual(response[0], 0xf1, 'Invalid GetResponse magic.')
