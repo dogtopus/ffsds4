@@ -14,7 +14,7 @@ import threading
 import os
 import shlex
 import signal
-from typing import Iterator, TYPE_CHECKING, Optional, Callable
+from typing import Iterator, TYPE_CHECKING, Optional, Callable, Sequence, Set, Tuple
 from . import ds4, sequencer
 
 if TYPE_CHECKING:
@@ -26,23 +26,19 @@ ConsoleDoMethod = Callable[['Console', str], Optional[bool]]
 ConsoleArgparseDoMethod = Callable[['Console', argparse.Namespace], Optional[bool]]
 
 def create_parser() -> argparse.ArgumentParser:
-    button_choices = tuple(item.name for item in ds4.ButtonType)
-    dpad_choices = tuple(item.name for item in ds4.DPadPosition)
+    button_choices = tuple(item.name for item in ds4.ButtonType) + tuple(f'd:{item.name}' for item in ds4.DPadPosition)
 
     p = argparse.ArgumentParser(prog='')
     sps = p.add_subparsers(dest='cmd', help='Command.')
 
     sp = sps.add_parser('press', help='Press the specified buttons.')
     sp.add_argument('-t', '--hold-time', type=float, help='Time to hold the buttons.')
-    sp.add_argument('-d', '--dpad', choices=dpad_choices, help='Press DPad towards specified direction.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to press.')
 
     sp = sps.add_parser('hold', help='Press and hold a button indefinitely.')
-    sp.add_argument('-d', '--dpad', choices=dpad_choices, help='Hold DPad towards specified direction.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
 
     sp = sps.add_parser('release', help='Unconditionally release previously held buttons.')
-    sp.add_argument('-d', '--dpad', help='Reset DPad direction to neutral.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
     return p
 
@@ -68,6 +64,9 @@ def use_argparse(insert_subcmd: Optional[str] = None) -> Callable[[ConsoleArgpar
                 parsed_args = self._parser.parse_args(shlex_args)
                 return func(self, parsed_args)
             except SystemExit:
+                return None
+            except Exception:
+                # Anti-crash
                 return None
         return _wrapper
     return _decorator
@@ -109,37 +108,56 @@ class Console(cmd.Cmd):
     def do_EOF(self, _arg: str):
         return self.do_exit(_arg)
 
+    @staticmethod
+    def _parse_button_type(button_names: Sequence[str]) -> Tuple[Set[ds4.ButtonType], Optional[ds4.DPadPosition]]:
+        dpad_pos: Optional[ds4.DPadPosition]
+        buttons: Set[ds4.ButtonType]
+
+        dpad_pos = None
+        buttons = set()
+
+        for name in button_names:
+            # DPad
+            if name.startswith('d:'):
+                if dpad_pos is not None:
+                    raise RuntimeError(f'Duplicate DPad position {name}')
+                dpad_pos = ds4.DPadPosition[name.split(':')[1]]
+            else:
+                buttons.add(ds4.ButtonType[name])
+        return buttons, dpad_pos
+
     @wait_for_connect
     @use_argparse('press')
     def do_press(self, args: argparse.Namespace):
         hold_time: Optional[float]
         hold_time = args.hold_time
-        try:
-            buttons = set(ds4.ButtonType[name] for name in args.buttons)
-        except KeyError as e:
-            print(f'Unknown button {e}')
-            return
-        self._sequencer.queue_press_buttons(buttons, hold_time if hold_time is not None else 0.05)
+
+        buttons, dpad_pos = self._parse_button_type(args.buttons)
+
+        if dpad_pos is not None:
+            self._sequencer.queue_press_dpad(dpad_pos)
+        if len(buttons) != 0:
+            self._sequencer.queue_press_buttons(buttons, hold_time if hold_time is not None else 0.05)
 
     @wait_for_connect
     @use_argparse('hold')
     def do_hold(self, args: argparse.Namespace):
-        try:
-            buttons = set(ds4.ButtonType[name] for name in args.buttons)
-        except KeyError as e:
-            print(f'Unknown button {e}')
-            return
-        self._sequencer.hold_buttons(buttons)
+        buttons, dpad_pos = self._parse_button_type(args.buttons)
+
+        if dpad_pos is not None:
+            self._sequencer.queue_press_dpad(dpad_pos)
+        if len(buttons) != 0:
+            self._sequencer.hold_buttons(buttons)
 
     @wait_for_connect
     @use_argparse('release')
     def do_release(self, args: argparse.Namespace):
-        try:
-            buttons = set(ds4.ButtonType[name] for name in args.buttons)
-        except KeyError as e:
-            print(f'Unknown button {e}')
-            return
-        self._sequencer.release_buttons(buttons)
+        buttons, dpad_pos = self._parse_button_type(args.buttons)
+
+        if dpad_pos is not None:
+            self._sequencer.queue_press_dpad(ds4.DPadPosition.neutral)
+        if len(buttons) != 0:
+            self._sequencer.release_buttons(buttons)
 
     def do_connected(self, _arg: str):
         print('Connected.' if self._function.connected.is_set() else 'Disconnected.')

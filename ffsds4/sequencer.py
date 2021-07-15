@@ -30,12 +30,15 @@ from typing import (
     Sized
 )
 
-from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType
+from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType, DPadPosition
 
 logger = logging.getLogger('ffsds4.sequencer')
 
 
 InputTypeIdentifier = Tuple[InputTargetType, Any]
+
+
+HOLDING_DPAD = (DPadPosition, None)
 
 
 class ControllerEventType(enum.Enum):
@@ -154,6 +157,60 @@ class ReschedulableAlarm(threading.Thread):
         self.cancel()
 
 
+class BaseTween:
+    '''
+    Base of tween objects.
+    '''
+    def __init__(self, start: float, duration: float, from_to: Tuple[float, float]) -> None:
+        self.start = start
+        self.duration = duration
+        self.from_to = from_to
+        self.done = False
+
+    def at(self, t: float) -> float:
+        '''
+        Calculate the position based on the current timestamp.
+        '''
+        p = self.progression(t)
+        if p >= 1:
+            self.done = True
+            return self.from_to[1]
+        elif p < 0:
+            return self.from_to[0]
+        else:
+            return self.from_to[0] + (self.from_to[1] - self.from_to[0]) * self._at(p)
+
+    def _at(self, p: float) -> float:
+        '''
+        Actual implementation of the at algorithm. Takes a time progression
+        variable p (0-1) and return the position (0-1).
+        '''
+        raise NotImplementedError('_at')
+
+    def progression(self, t: float) -> float:
+        return (t - self.start) / self.duration
+
+
+class LinearTween(BaseTween):
+    '''
+    A linear tween.
+    '''
+    def _at(self, p: float) -> float:
+        return p
+
+
+class PolyEaseTween(BaseTween):
+    """
+    A polynomial ease inout tween. Based on https://easings.net/#easeInOutQuad.
+    """
+    def __init__(self, start: float, duration: float, from_to: Tuple[float, float], exp: float = 2):
+        super().__init__(start, duration, from_to)
+        self.exp = exp
+
+    def _at(self, p: float) -> float:
+        return (2 ** (self.exp - 1) * p ** self.exp) if p < 0.5 else (1 - (-2 * p + 2) ** self.exp / 2)
+
+
 class Sequencer:
     _event_queue_new: HeapqWrapper[ControllerEvent]
     _holding: Dict[InputTypeIdentifier, ControllerEvent]
@@ -201,8 +258,10 @@ class Sequencer:
                             ev_on_type, ev_on_id = ev.target
                             if ev_on_type == ButtonType:
                                 report.set_button(ev_on_id, ev.op == ControllerEventType.press)
+                            elif ev_on_type == DPadPosition:
+                                report.set_dpad(DPadPosition.neutral if ev.op == ControllerEventType.release else ev_on_id)
                             if ev.next_ is None:
-                                del self._holding[ev.target]
+                                del self._holding[ev.target if ev_on_type != DPadPosition else HOLDING_DPAD]
 
         except Exception:
             logger.exception('Unhandled exception in tick thread.')
@@ -210,6 +269,9 @@ class Sequencer:
             raise
         finally:
             logger.debug('Sequencer tick thread stopped.')
+
+    def _reschedule_alarm(self):
+        self._alarm.reschedule(self._event_queue_new.peek().at)
 
     def start(self) -> None:
         '''
@@ -283,7 +345,54 @@ class Sequencer:
                     event = ControllerEvent(at=hold_until, op=ControllerEventType.release, target=target)
                     self._holding[target] = event
                     self._event_queue_new.push(event)
-            self._alarm.reschedule(self._event_queue_new.peek().at)
+            self._reschedule_alarm()
+
+    def queue_press_dpad(self, dpad_pos: DPadPosition, hold: float = 0.05) -> None:
+        '''
+        Queue a timed DPad press.
+        Previous queued events on DPad will be cancelled and a release event
+        will be queued before the actual press and release event.
+        If dpad_pos is neutral, the DPad will be released and any unfinished
+        events related to DPad will be cancelled.
+        '''
+        start_time = time.monotonic()
+        hold_until = start_time + hold
+        target = (DPadPosition, dpad_pos)
+
+        if dpad_pos == DPadPosition.neutral:
+            self.release_dpad()
+            return
+
+        with self._mutex:
+            if HOLDING_DPAD in self._holding:
+                # Cancel the ongoing event chain for DPad
+                self._holding[HOLDING_DPAD].cancel()
+                del self._holding[HOLDING_DPAD]
+
+                # Force the DPad to go back to center
+                with self._tracker.start_modify_report() as report:
+                    report.set_dpad(DPadPosition.neutral)
+
+                event_press = ControllerEvent(at=start_time+self._min_release_time, op=ControllerEventType.press, target=target)
+                event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=ControllerEventType.release, target=target)
+
+                self._holding[HOLDING_DPAD] = event_press
+
+                # Ensure the button is released for at least _min_release_time seconds, then press it.
+                self._event_queue_new.push(event_press)
+                # At hold_until+_min_release_time time, release again
+                self._event_queue_new.push(event_release_final)
+            else:
+                # Press the DPad
+                with self._tracker.start_modify_report() as report:
+                    report.set_dpad(dpad_pos)
+
+                # Hold until hold_until seconds later and release
+                event = ControllerEvent(at=hold_until, op=ControllerEventType.release, target=target)
+                self._holding[HOLDING_DPAD] = event
+                self._event_queue_new.push(event)
+
+            self._reschedule_alarm()
 
     def hold_release_buttons(self, buttons: Set[ButtonType], release=False) -> None:
         '''
@@ -303,6 +412,22 @@ class Sequencer:
                     del self._holding[target]
                 report.set_button(button, not release)
 
+    def hold_release_dpad(self, dpad_pos: DPadPosition) -> None:
+        '''
+        Hold the DPad indefinitely. Note that this will not generate a release
+        event for holding initiated by queue_press_dpad but will cancel
+        the event chain already in progress.
+
+        If release is True, it will release the DPad unconditionally and
+        cancel all related events.
+        '''
+        with self._tracker.start_modify_report() as report, self._mutex:
+            if HOLDING_DPAD in self._holding:
+                # Cancel the ongoing event chain for this particular button
+                self._holding[HOLDING_DPAD].cancel()
+                del self._holding[HOLDING_DPAD]
+            report.set_dpad(dpad_pos)
+
     def hold_buttons(self, buttons: Set[ButtonType]) -> None:
         '''
         Hold buttons indefinitely.
@@ -319,3 +444,9 @@ class Sequencer:
         Equivalent to Sequencer.hold_release_buttons(buttons, True)
         '''
         self.hold_release_buttons(buttons, True)
+
+    def hold_dpad(self, dpad_pos: DPadPosition):
+        self.hold_release_dpad(dpad_pos)
+
+    def release_dpad(self):
+        self.hold_release_dpad(DPadPosition.neutral)

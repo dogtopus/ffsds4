@@ -4,7 +4,7 @@ import unittest
 import os
 import zlib
 import time
-from ffsds4 import ds4
+from ffsds4 import ds4, sequencer
 
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import pss
@@ -614,6 +614,41 @@ class DS4Test(unittest.TestCase):
         )
         actual = bytes(features).hex()
         self.assertEqual(actual, FEATURE_CONFIG_ALL_ENABLED.hex())
+
+    def test_sequencer_lineartween(self):
+        tw = sequencer.LinearTween(0, 5.0, (0, 5))
+        self.assertFalse(tw.done)
+        self.assertAlmostEqual(tw.at(1.0), 1.0)
+        self.assertAlmostEqual(tw.at(1.5), 1.5)
+        self.assertAlmostEqual(tw.at(2.0), 2.0)
+        self.assertAlmostEqual(tw.at(3.5), 3.5)
+        self.assertAlmostEqual(tw.at(5.0), 5.0)
+        self.assertTrue(tw.done)
+
+    def test_sequencer_polyeasetween_quad(self):
+        tw = sequencer.PolyEaseTween(0, 1, (0, 1))
+        self.assertFalse(tw.done)
+        self.assertAlmostEqual(tw.at(0.1), 0.02)
+        self.assertAlmostEqual(tw.at(0.35), 0.245)
+        self.assertAlmostEqual(tw.at(0.5), 0.5)
+        self.assertAlmostEqual(tw.at(0.62), 0.7112)
+        self.assertAlmostEqual(tw.at(0.77), 0.8942)
+        self.assertAlmostEqual(tw.at(0.9), 0.98)
+        self.assertAlmostEqual(tw.at(1.0), 1.0)
+        self.assertTrue(tw.done)
+
+    def test_sequencer_polyeasetween_cubic(self):
+        tw = sequencer.PolyEaseTween(0, 1, (0, 1), exp=3)
+        self.assertFalse(tw.done)
+        self.assertAlmostEqual(tw.at(0.1), 0.004)
+        self.assertAlmostEqual(tw.at(0.24), 0.055296)
+        self.assertAlmostEqual(tw.at(0.42), 0.296352)
+        self.assertAlmostEqual(tw.at(0.5), 0.5)
+        self.assertAlmostEqual(tw.at(0.71), 0.902444)
+        self.assertAlmostEqual(tw.at(0.87), 0.991212)
+        self.assertAlmostEqual(tw.at(0.9), 0.996)
+        self.assertAlmostEqual(tw.at(1.0), 1.0)
+        self.assertTrue(tw.done)
 
 if __name__ == '__main__':
     unittest.main()
