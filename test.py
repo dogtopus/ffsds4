@@ -4,7 +4,7 @@ import unittest
 import os
 import zlib
 import time
-from ffsds4 import ds4, sequencer
+from ffsds4lib import ds4, sequencer
 
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import pss

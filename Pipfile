@@ -21,10 +21,10 @@ start = "./start.py"
 start-with-sudo = "sudo ./start.py"
 # Due to how pipenv passes parameters, su is not supported at this moment.
 test = "python test.py"
-package = "pyinstaller --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' start.py"
-package-onefile = "pyinstaller -n ffsds4 --add-binary='ffsds4/descriptors/*.desc.bin:ffsds4/descriptors' --onefile start.py"
+package = "pyinstaller -n ffsds4 --add-binary='ffsds4lib/descriptors/*.desc.bin:ffsds4lib/descriptors' start.py"
+package-onefile = "pyinstaller -n ffsds4-onefile --add-binary='ffsds4lib/descriptors/*.desc.bin:ffsds4lib/descriptors' --onefile start.py"
 # TODO contribute type stubs to functionfs
-mypy = "mypy --ignore-missing-imports ffsds4"
-lint = "pylint ffsds4"
+mypy = "mypy --ignore-missing-imports ffsds4lib"
+lint = "pylint ffsds4lib"
 # TODO should adopt fail under for this
-lint-minimal = "pylint --disable=all --enable=E,F ffsds4"
+lint-minimal = "pylint --disable=all --enable=E,F ffsds4lib"
