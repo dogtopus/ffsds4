@@ -16,7 +16,9 @@ import time
 import threading
 import weakref
 import zlib # for crc32
-from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast, ClassVar, TypeVar
+
+from ctypes import c_uint8, c_int16, c_uint16, c_uint32
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast, ClassVar, TypeVar, Protocol, Iterable
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -73,6 +75,21 @@ InputTargetType = Union[
     str,
 ]
 
+# Workaround the "mostly broken" ctypes type hints by trying to define a
+# compatible interface for ctypes array classes.
+# To access ctypes-specific methods on struct member, cast it back to the
+# corresponding ctypes.Array[? extends ctypes._CData] type and access. This
+# is also loosely applicable to primitive types like ints (in this case cast
+# to c_int, etc. instead).
+KeyType_contra = TypeVar('KeyType_contra', contravariant=True)
+ValType_co = TypeVar('ValType_co')
+class Subscriptable(Protocol[KeyType_contra, ValType_co]):
+    def __getitem__(self, key: KeyType_contra) -> ValType_co: ...
+    def __setitem__(self, key: KeyType_contra, val: ValType_co) -> None: ...
+
+ElementType = TypeVar('ElementType')
+class CArrayWrapper(Subscriptable[int, ElementType], Iterable[ElementType]): ...
+
 
 # Hack for ctypes struct field type
 class StructFieldLike:
@@ -85,8 +102,8 @@ class TouchFrame(ctypes.LittleEndianStructure):
     pos: MutableSequence[int]
 
     _fields_ = (
-        ('seq', ctypes.c_uint8),
-        ('pos', ctypes.c_uint32 * 2),
+        ('seq', c_uint8),
+        ('pos', c_uint32 * 2),
     )
     _pack_ = True
 
@@ -161,36 +178,35 @@ class TouchFrame(ctypes.LittleEndianStructure):
 
 class InputReport(ctypes.LittleEndianStructure):
     type: int
-    # Hack around ctypes array typing limitation by making the fields MutableSequence of ints instead
-    sticks: MutableSequence[int]
-    buttons: MutableSequence[int]
-    triggers: MutableSequence[int]
+    sticks: CArrayWrapper[int]
+    buttons: CArrayWrapper[int]
+    triggers: CArrayWrapper[int]
     sensor_timestamp: int
     battery: int
-    gyro: MutableSequence[int]
-    accel: MutableSequence[int]
-    u25: MutableSequence[int]
+    gyro: CArrayWrapper[int]
+    accel: CArrayWrapper[int]
+    u25: CArrayWrapper[int]
     state_ext: int
     u31: int
     tp_available_frame: int
-    tp_frames: MutableSequence[TouchFrame]
-    padding: MutableSequence[int]
+    tp_frames: CArrayWrapper[TouchFrame]
+    padding: CArrayWrapper[int]
 
     _fields_ = (
-        ('type', ctypes.c_uint8),
-        ('sticks', ctypes.c_uint8 * 4),
-        ('buttons', ctypes.c_uint8 * 3),
-        ('triggers', ctypes.c_uint8 * 2),
-        ('sensor_timestamp', ctypes.c_uint16),
-        ('battery', ctypes.c_uint8),
-        ('gyro', ctypes.c_int16 * 3),
-        ('accel', ctypes.c_int16 * 3),
-        ('u25', ctypes.c_uint8 * 5),
-        ('state_ext', ctypes.c_uint8),
-        ('u31', ctypes.c_uint16),
-        ('tp_available_frame', ctypes.c_uint8),
+        ('type', c_uint8),
+        ('sticks', c_uint8 * 4),
+        ('buttons', c_uint8 * 3),
+        ('triggers', c_uint8 * 2),
+        ('sensor_timestamp', c_uint16),
+        ('battery', c_uint8),
+        ('gyro', c_int16 * 3),
+        ('accel', c_int16 * 3),
+        ('u25', c_uint8 * 5),
+        ('state_ext', c_uint8),
+        ('u31', c_uint16),
+        ('tp_available_frame', c_uint8),
         ('tp_frames', TouchFrame * 3),
-        ('padding', ctypes.c_uint8 * 3),
+        ('padding', c_uint8 * 3),
     )
     _pack_ = True
 
@@ -250,24 +266,24 @@ class InputReport(ctypes.LittleEndianStructure):
 class FeedbackReport(ctypes.LittleEndianStructure):
     type: int
     flags: int
-    padding1: MutableSequence[int]
+    padding1: CArrayWrapper[int]
     rumble_right: int
     rumble_left: int
-    led_color: MutableSequence[int]
+    led_color: CArrayWrapper[int]
     led_flash_on: int
     led_flash_off: int
-    padding: MutableSequence[int]
+    padding: CArrayWrapper[int]
 
     _fields_ = (
-        ('type', ctypes.c_uint8),
-        ('flags', ctypes.c_uint8),
-        ('padding1', ctypes.c_uint8 * 2),
-        ('rumble_right', ctypes.c_uint8),
-        ('rumble_left', ctypes.c_uint8),
-        ('led_color', ctypes.c_uint8 * 3),
-        ('led_flash_on', ctypes.c_uint8),
-        ('led_flash_off', ctypes.c_uint8),
-        ('padding', ctypes.c_uint8 * 21),
+        ('type', c_uint8),
+        ('flags', c_uint8),
+        ('padding1', c_uint8 * 2),
+        ('rumble_right', c_uint8),
+        ('rumble_left', c_uint8),
+        ('led_color', c_uint8 * 3),
+        ('led_flash_on', c_uint8),
+        ('led_flash_off', c_uint8),
+        ('padding', c_uint8 * 21),
     )
     _pack_ = True
 
@@ -283,11 +299,11 @@ class IMUParameters(ctypes.LittleEndianStructure):
     acc_res_per_g: int
 
     _fields_ = (
-        ('gyro_range', ctypes.c_uint16),
-        ('gyro_res_per_deg_s_denom', ctypes.c_uint16),
-        ('gyro_res_per_deg_s_num', ctypes.c_uint16),
-        ('accel_range', ctypes.c_uint16),
-        ('acc_res_per_g', ctypes.c_uint16),
+        ('gyro_range', c_uint16),
+        ('gyro_res_per_deg_s_denom', c_uint16),
+        ('gyro_res_per_deg_s_num', c_uint16),
+        ('accel_range', c_uint16),
+        ('acc_res_per_g', c_uint16),
     )
     _pack_ = True
 
@@ -315,25 +331,25 @@ class FeatureConfiguration(ctypes.LittleEndianStructure):
     u3: int
     features: Union[int, ControllerFeature]
     controller_type: Union[int, ControllerType]
-    touchpad_param: MutableSequence[int]
+    touchpad_param: CArrayWrapper[int]
     imu_param: IMUParameters
     magic_0x0d0d: int
-    u20: MutableSequence[int]
-    wheel_param: MutableSequence[int]
-    u27: MutableSequence[int]
+    u20: CArrayWrapper[int]
+    wheel_param: CArrayWrapper[int]
+    u27: CArrayWrapper[int]
 
     _fields_ = (
-        ('type', ctypes.c_uint8),
-        ('hid_usage', ctypes.c_uint16),
-        ('u3', ctypes.c_uint8),
-        ('features', ctypes.c_uint8),
-        ('controller_type', ctypes.c_uint8),
-        ('touchpad_param', ctypes.c_uint8 * 2),
+        ('type', c_uint8),
+        ('hid_usage', c_uint16),
+        ('u3', c_uint8),
+        ('features', c_uint8),
+        ('controller_type', c_uint8),
+        ('touchpad_param', c_uint8 * 2),
         ('imu_param', IMUParameters),
-        ('magic_0x0d0d', ctypes.c_uint16),
-        ('u20', ctypes.c_uint8 * 4),
-        ('wheel_param', ctypes.c_uint8 * 3),
-        ('u27', ctypes.c_uint8 * 21),
+        ('magic_0x0d0d', c_uint16),
+        ('u20', c_uint8 * 4),
+        ('wheel_param', c_uint8 * 3),
+        ('u27', c_uint8 * 21),
     )
     _pack_ = True
 
@@ -412,14 +428,14 @@ class AuthPageSizeReport(ctypes.LittleEndianStructure):
     u1: int
     size_challenge: int
     size_response: int
-    u4: MutableSequence[int]
+    u4: CArrayWrapper[int]
 
     _fields_ = (
-        ('type', ctypes.c_uint8),
-        ('u1', ctypes.c_uint8),
-        ('size_challenge', ctypes.c_uint8),
-        ('size_response', ctypes.c_uint8),
-        ('u4', ctypes.c_uint8 * 4),
+        ('type', c_uint8),
+        ('u1', c_uint8),
+        ('size_challenge', c_uint8),
+        ('size_response', c_uint8),
+        ('u4', c_uint8 * 4),
     )
     _pack_ = True
 
@@ -429,16 +445,16 @@ class AuthReport(ctypes.LittleEndianStructure):
     seq: int
     page: int
     sbz: int
-    data: ctypes.Array[ctypes.c_uint8] # not exactly but close enough
+    data: ctypes.Array[c_uint8] # not exactly but close enough
     crc32: int
 
     _fields_ = (
-        ('type', ctypes.c_uint8),
-        ('seq', ctypes.c_uint8),
-        ('page', ctypes.c_uint8),
-        ('sbz', ctypes.c_uint8),
-        ('data', ctypes.c_uint8 * 56),
-        ('crc32', ctypes.c_uint32),
+        ('type', c_uint8),
+        ('seq', c_uint8),
+        ('page', c_uint8),
+        ('sbz', c_uint8),
+        ('data', c_uint8 * 56),
+        ('crc32', c_uint32),
     )
     _pack = True
 
@@ -447,80 +463,80 @@ class AuthStatusReport(ctypes.LittleEndianStructure):
     type: int
     seq: int
     status: int
-    padding: MutableSequence[int]
+    padding: CArrayWrapper[int]
     crc32: int
 
     _fields_ = (
-        ('type', ctypes.c_uint8),
-        ('seq', ctypes.c_uint8),
-        ('status', ctypes.c_uint8),
-        ('padding', ctypes.c_uint8 * 9),
-        ('crc32', ctypes.c_uint32),
+        ('type', c_uint8),
+        ('seq', c_uint8),
+        ('status', c_uint8),
+        ('padding', c_uint8 * 9),
+        ('crc32', c_uint32),
     )
     _pack = True
 
 
 class DS4IdentityBlock(ctypes.LittleEndianStructure):
-    serial: ctypes.Array[ctypes.c_uint8]
-    modulus: ctypes.Array[ctypes.c_uint8]
-    exponent: ctypes.Array[ctypes.c_uint8]
+    serial: ctypes.Array[c_uint8]
+    modulus: ctypes.Array[c_uint8]
+    exponent: ctypes.Array[c_uint8]
 
     _pack_ = 1
     _fields_ = (
-        ('serial', ctypes.c_uint8 * 0x10),
-        ('modulus', ctypes.c_uint8 * 0x100),
-        ('exponent', ctypes.c_uint8 * 0x100),
+        ('serial', c_uint8 * 0x10),
+        ('modulus', c_uint8 * 0x100),
+        ('exponent', c_uint8 * 0x100),
     )
 
 
 class DS4PrivateKeyBlock(ctypes.LittleEndianStructure):
-    p: ctypes.Array[ctypes.c_uint8]
-    q: ctypes.Array[ctypes.c_uint8]
-    dp1: ctypes.Array[ctypes.c_uint8]
-    dq1: ctypes.Array[ctypes.c_uint8]
-    pq: ctypes.Array[ctypes.c_uint8]
+    p: ctypes.Array[c_uint8]
+    q: ctypes.Array[c_uint8]
+    dp1: ctypes.Array[c_uint8]
+    dq1: ctypes.Array[c_uint8]
+    pq: ctypes.Array[c_uint8]
 
     _pack_ = 1
     _fields_ = (
-        ('p', ctypes.c_uint8 * 0x80),
-        ('q', ctypes.c_uint8 * 0x80),
-        ('dp1', ctypes.c_uint8 * 0x80),
-        ('dq1', ctypes.c_uint8 * 0x80),
-        ('pq', ctypes.c_uint8 * 0x80),
+        ('p', c_uint8 * 0x80),
+        ('q', c_uint8 * 0x80),
+        ('dp1', c_uint8 * 0x80),
+        ('dq1', c_uint8 * 0x80),
+        ('pq', c_uint8 * 0x80),
     )
 
 
 class DS4SignedIdentityBlock(ctypes.LittleEndianStructure):
     identity: DS4IdentityBlock
-    sig_identity: ctypes.Array[ctypes.c_uint8]
+    sig_identity: ctypes.Array[c_uint8]
 
     _pack_ = 1
     _fields_ = (
         ('identity', DS4IdentityBlock),
-        ('sig_identity', ctypes.c_uint8 * 0x100),
+        ('sig_identity', c_uint8 * 0x100),
     )
 
 
 class DS4FullKeyBlock(ctypes.LittleEndianStructure):
     identity: DS4IdentityBlock
-    sig_identity: ctypes.Array[ctypes.c_uint8]
+    sig_identity: ctypes.Array[c_uint8]
     private_key: DS4PrivateKeyBlock
 
     _pack_ = 1
     _fields_ = (
         ('identity', DS4IdentityBlock),
-        ('sig_identity', ctypes.c_uint8 * 0x100),
+        ('sig_identity', c_uint8 * 0x100),
         ('private_key', DS4PrivateKeyBlock),
     )
 
 
 class DS4Response(ctypes.LittleEndianStructure):
-    sig: ctypes.Array[ctypes.c_uint8]
+    sig: ctypes.Array[c_uint8]
     signed_identity: DS4SignedIdentityBlock
 
     _pack_ = 1
     _fields_ = (
-        ('sig', ctypes.c_uint8 * 0x100),
+        ('sig', c_uint8 * 0x100),
         ('signed_identity', DS4SignedIdentityBlock),
     )
 
@@ -912,7 +928,7 @@ class DS4AuthStateTracker:
     def set_challenge(self, ep0: io.FileIO) -> None:
         buf = AuthReport()
         ep0.readinto(buf) #type: ignore[arg-type]
-        crc = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
+        crc = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(c_uint32)])
         if crc != buf.crc32:
             # TODO do we need to do more here?
             logger.warning("Invalid CRC32.")
@@ -934,7 +950,7 @@ class DS4AuthStateTracker:
         buf = AuthStatusReport(type=ReportType.get_auth_status)
         buf.seq = self._seq
         buf.status = self._status
-        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthStatusReport) - ctypes.sizeof(ctypes.c_uint32)])
+        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthStatusReport) - ctypes.sizeof(c_uint32)])
         ep0.write(buf) #type: ignore[arg-type]
 
     def get_response(self, ep0: io.FileIO) -> None:
@@ -945,7 +961,7 @@ class DS4AuthStateTracker:
             logger.warning('Attempt to read outside of the auth response buffer.')
         if self._resp_page == self._resp_max_page:
             self.reset()
-        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(ctypes.c_uint32)])
+        buf.crc32 = zlib.crc32(bytes(buf)[:ctypes.sizeof(AuthReport) - ctypes.sizeof(c_uint32)])
         ep0.write(buf) #type: ignore[arg-type]
         if self._status == 0x0:
             self._resp_page += 1
