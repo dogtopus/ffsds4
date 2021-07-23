@@ -4,8 +4,10 @@
 # This file is part of FFSDS4
 # Copyright (C) 2021-  dogtopus
 
+import cmath
 import enum
 import functools
+import math
 import threading
 import queue
 import time
@@ -27,7 +29,8 @@ from typing import (
     TypeVar,
     List,
     Iterable,
-    Sized
+    Sized,
+    Literal
 )
 
 from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType, DPadPosition
@@ -39,6 +42,8 @@ InputTypeIdentifier = Tuple[InputTargetType, Any]
 
 
 HOLDING_DPAD = (DPadPosition, None)
+HOLDING_LSTICK = ('stick', 'l')
+HOLDING_RSTICK = ('stick', 'r')
 
 
 class ControllerEventType(enum.Enum):
@@ -273,6 +278,19 @@ class Sequencer:
     def _reschedule_alarm(self):
         self._alarm.reschedule(self._event_queue_new.peek().at)
 
+    @staticmethod
+    def _stick_to_native(xy: Tuple[float, float], unit: Literal['cartesian', 'polar', 'raw']) -> Tuple[int, int]:
+        if unit == 'raw':
+            return int(xy[0]), int(xy[1])
+        elif unit == 'polar':
+            # Abuse cmath.rect() to convert polar to cartesian coordinates
+            rect = cmath.rect(xy[0], xy[1] / (180/math.pi))
+            return max(min(round((rect.real+1) / 2 * 255), 255), 0), max(min(round((rect.imag+1) / 2 * 255), 255), 0)
+        elif unit == 'cartesian':
+            return max(min(round((xy[0]+1) / 2 * 255), 255), 0), max(min(round((xy[1]+1) / 2 * 255), 255), 0)
+        else:
+            raise ValueError('Invalid unit.')
+
     def start(self) -> None:
         '''
         Start sequencer thread.
@@ -450,3 +468,21 @@ class Sequencer:
 
     def release_dpad(self):
         self.hold_release_dpad(DPadPosition.neutral)
+
+    def _cancel_sticks(self):
+        if HOLDING_LSTICK in self._holding:
+            self._holding[HOLDING_LSTICK].cancel()
+            del self._holding[HOLDING_LSTICK]
+        if HOLDING_RSTICK in self._holding:
+            self._holding[HOLDING_RSTICK].cancel()
+            del self._holding[HOLDING_RSTICK]
+
+    def hold_stick(self, left: Tuple[float, float], right: Tuple[float, float], unit: Literal['cartesian', 'polar', 'raw'] = 'cartesian') -> None:
+        with self._tracker.start_modify_report() as report, self._mutex:
+            self._cancel_sticks()
+            report.set_stick(self._stick_to_native(left, unit), self._stick_to_native(right, unit))
+
+    def release_stick(self):
+        with self._tracker.start_modify_report() as report, self._mutex:
+            self._cancel_sticks()
+            report.set_stick((0x80, 0x80), (0x80, 0x80))

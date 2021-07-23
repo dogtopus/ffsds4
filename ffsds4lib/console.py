@@ -40,6 +40,18 @@ def create_parser() -> argparse.ArgumentParser:
 
     sp = sps.add_parser('release', help='Unconditionally release previously held buttons.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
+
+    sp = sps.add_parser('stick_set', help='Set stick position.')
+    mxg = sp.add_mutually_exclusive_group()
+    mxg.add_argument('-c', '--cartesian', action='store_const', dest='unit', const='cartesian', default='cartesian', help='Use cartesian coordinates. The values must be in the range of (-1, 1) (default).')
+    mxg.add_argument('-p', '--polar', action='store_const', dest='unit', const='polar', help='Use polar coordinates The values must be in the range of ((-1, 1), (0, 360)).')
+    mxg.add_argument('-r', '--raw', action='store_const', dest='unit', const='raw', help='Use raw coordinates. The values must be in the range of (0, 256).')
+    sp.add_argument('lx', type=float, help='Left X.')
+    sp.add_argument('ly', type=float, help='Left Y.')
+    sp.add_argument('rx', type=float, help='Right X.')
+    sp.add_argument('ry', type=float, help='Right Y.')
+
+    sp = sps.add_parser('stick_release', help='Release all sticks.')
     return p
 
 def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
@@ -67,6 +79,7 @@ def use_argparse(insert_subcmd: Optional[str] = None) -> Callable[[ConsoleArgpar
                 return None
             except Exception:
                 # Anti-crash
+                logger.exception('An unexpected exception occurred when executing command.')
                 return None
         return _wrapper
     return _decorator
@@ -158,6 +171,16 @@ class Console(cmd.Cmd):
             self._sequencer.queue_press_dpad(ds4.DPadPosition.neutral)
         if len(buttons) != 0:
             self._sequencer.release_buttons(buttons)
+
+    @wait_for_connect
+    @use_argparse('stick_set')
+    def do_stick_set(self, args: argparse.Namespace):
+        self._sequencer.hold_stick((args.lx, args.ly), (args.rx, args.ry), unit=args.unit)
+
+    @wait_for_connect
+    @use_argparse('stick_release')
+    def do_stick_release(self, args: argparse.Namespace):
+        self._sequencer.release_stick()
 
     def do_connected(self, _arg: str):
         print('Connected.' if self._function.connected.is_set() else 'Disconnected.')
