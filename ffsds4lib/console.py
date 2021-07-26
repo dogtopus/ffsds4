@@ -9,12 +9,15 @@ import cmd
 import contextlib
 import functools
 import logging
-import functionfs.gadget
 import threading
 import os
 import shlex
 import signal
 from typing import Iterator, TYPE_CHECKING, Optional, Callable, Sequence, Set, Tuple
+
+import functionfs.gadget
+import sty
+
 from . import ds4, sequencer
 
 if TYPE_CHECKING:
@@ -24,6 +27,8 @@ logger = logging.getLogger('ffsds4.console')
 
 ConsoleDoMethod = Callable[['Console', str], Optional[bool]]
 ConsoleArgparseDoMethod = Callable[['Console', argparse.Namespace], Optional[bool]]
+
+BARS = '▁▂▃▄▅▆▇█'
 
 def create_parser() -> argparse.ArgumentParser:
     button_choices = tuple(item.name for item in ds4.ButtonType) + tuple(f'd:{item.name}' for item in ds4.DPadPosition)
@@ -52,6 +57,10 @@ def create_parser() -> argparse.ArgumentParser:
     sp.add_argument('ry', type=float, help='Right Y.')
 
     sp = sps.add_parser('stick_release', help='Release all sticks.')
+
+    sp = sps.add_parser('feedback', help='Read feedback report.')
+    sp.add_argument('field', choices=('led', 'rumble'), help='Field to read.')
+
     return p
 
 def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
@@ -182,5 +191,19 @@ class Console(cmd.Cmd):
     def do_stick_release(self, args: argparse.Namespace):
         self._sequencer.release_stick()
 
+    @wait_for_connect
+    @use_argparse('feedback')
+    def do_feedback(self, args: argparse.Namespace):
+        if args.field == 'led':
+            r, g, b = self._tracker.feedback_report.led_color
+            flash_on, flash_off = self._tracker.feedback_report.led_flash_on, self._tracker.feedback_report.led_flash_off
+            print(f'{sty.fg(r, g, b)}●{sty.fg.rs} #{r:02x}{g:02x}{b:02x} ({flash_on} on {flash_off} off)')
+        elif args.field == 'rumble':
+            rl = self._tracker.feedback_report.rumble_left
+            rr = self._tracker.feedback_report.rumble_right
+            rl_intensity = '| |' if rl == 0 else f'|{BARS[min((rl - 1) // 32, 7)]}|'
+            rr_intensity = '| |' if rr == 0 else f'|{BARS[min((rr - 1) // 32, 7)]}|'
+            print(f'{rl_intensity} {rl:03d}   {rr_intensity} {rr:03d}')
+
     def do_connected(self, _arg: str):
-        print('Connected.' if self._function.connected.is_set() else 'Disconnected.')
+        print(f'{sty.fg.green}●{sty.fg.rs} Connected.' if self._function.connected.is_set() else f'{sty.fg.red}●{sty.fg.rs} Disconnected.')

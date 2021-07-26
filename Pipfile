@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 functionfs = "*"
 pycryptodomex = "*"
+sty = "*"
 
 [dev-packages]
 pylint = "*"
@@ -28,3 +29,6 @@ mypy = "mypy --ignore-missing-imports ffsds4lib"
 lint = "pylint ffsds4lib"
 # TODO should adopt fail under for this
 lint-minimal = "pylint --disable=all --enable=E,F ffsds4lib"
+
+[pipenv]
+allow_prereleases = true
