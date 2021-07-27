@@ -18,7 +18,7 @@ import weakref
 import zlib # for crc32
 
 from ctypes import c_uint8, c_int16, c_uint16, c_uint32
-from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast, ClassVar, TypeVar, Protocol, Iterable
+from typing import Tuple, IO, Iterator, Optional, ByteString, Sequence, Union, Type, MutableSequence, ContextManager, Callable, cast, ClassVar, TypeVar, Protocol, Iterable, BinaryIO
 from concurrent import futures
 
 from Cryptodome.PublicKey import RSA
@@ -546,7 +546,7 @@ AUTH_RESP_SIZE = 0x410
 
 
 class DS4Key:
-    def __init__(self, ds4key_file: io.FileIO) -> None:
+    def __init__(self, ds4key_file: BinaryIO) -> None:
         ds4key = DS4FullKeyBlock()
         actual = ds4key_file.readinto(ds4key) #type: ignore
         if actual != ctypes.sizeof(DS4FullKeyBlock):

@@ -24,6 +24,7 @@
 Third party PS4 controller emulator based on python-functionfs and its HID example.
 """
 from __future__ import print_function
+import cProfile
 import ctypes
 import functools
 import errno
@@ -38,6 +39,7 @@ from functionfs.gadget import (
     GadgetSubprocessManager,
     ConfigFunctionFFSSubprocess,
 )
+from typing import Optional
 
 from . import ds4
 
@@ -88,7 +90,15 @@ class DS4Function(functionfs.HIDFunction):
     """
     Third party PS4 controller function.
     """
-    def __init__(self, ds4key_path, turbo=False, aligned=False, **kw):
+    _profile: Optional[cProfile.Profile]
+    def __init__(self, ds4key_path: str, turbo: bool = False, aligned: bool = False, profile: Optional[str]=None, **kw) -> None:
+        if profile is not None:
+            self._profile = cProfile.Profile()
+            self._profile_file = profile
+            self._profile.enable()
+        else:
+            self.profile = None
+
         super().__init__(
             report_descriptor=REPORT_DESCRIPTOR,
             in_report_max_length=64,
@@ -119,6 +129,15 @@ class DS4Function(functionfs.HIDFunction):
         self.console_task = threading.Thread(target=self.console.cmdloop)
         logger.info('Gadget initialized. Dropping console.')
         self.console_task.start()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._profile is not None:
+            try:
+                logger.debug('Dumping profile...')
+                self._profile.disable()
+                self._profile.dump_stats(self._profile_file)
+            finally:
+                super().__exit__(exc_type, exc_value, traceback)
 
     def getEndpointClass(self, is_in, descriptor):
         """
@@ -185,7 +204,7 @@ def create_gadget_instance(args):
                     'function_list': [
                         functools.partial(
                             ConfigFunctionFFSSubprocess,
-                            getFunction=functools.partial(DS4Function, os.path.abspath(args.ds4key), aligned=args.aligned)
+                            getFunction=functools.partial(DS4Function, os.path.abspath(args.ds4key), aligned=args.aligned, profile=args.profile)
                         ),
                     ],
                     'MaxPower': 500,
@@ -223,6 +242,7 @@ def parse_args():
     p.add_argument('-l', '--log-level', type=parse_loglevel, default='INFO', help='Set log level (either Python log level names e.g. DEBUG or numbers e.g. 10).')
     p.add_argument('-a', '--aligned', action='store_true', default=False, help='Use aligned buffers for input reports (may be required by certain hardware).')
     p.add_argument('-k', '--ds4key', required=True, help='Specify DS4Key file.')
+    p.add_argument('-p', '--profile', type=os.path.abspath, help='Enable profiling and save profiling result to specified file on exit.')
     return p, p.parse_args()
 
 def main():
@@ -231,9 +251,6 @@ def main():
     """
     _p, args = parse_args()
     logging.basicConfig(level=args.log_level)
-
-    
-
 
     try:
         with create_gadget_instance(args) as gadget:

@@ -30,3 +30,21 @@ pipenv run package-onefile
 Note that targeting Arm-based hardware requires the use of emulators and like (such as QEMU) or a real Arm-based hardware that runs a Linux distro similar enough to the target board (in terms of libc and libaio versions).
 
 If ffsds4 fails with `-EBUSY`, try unloading the kernel module `g_ffs`. If the module is built-in (e.g. on Manjaro ARM for Pinephone), blacklist `gfs_init` function by adding `initcall_blacklist=gfs_init` to the kernel cmdline and reboot the system.
+
+## Profiling
+
+Run ffsds4 with parameter `--profile path/to/result.profile` to enable profiler.
+
+Result is saved as standard Python profile/cProfile dump file. This file can be decoded using Python's `profile` or `cProfile` module.
+
+To visualize the result using `snakeviz`, make sure you installed the development dependencies, then run
+
+```sh
+pipenv run snakeviz path/to/result.profile
+```
+
+Alternatively you could use `tuna`, which sometimes produces better graph than snakeviz but has less features:
+
+```sh
+pipenv run tuna path/to/result.profile
+```
