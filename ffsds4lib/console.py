@@ -9,6 +9,7 @@ import cmd
 import contextlib
 import functools
 import logging
+import math
 import threading
 import os
 import shlex
@@ -195,7 +196,8 @@ class Console(cmd.Cmd):
     @use_argparse('feedback')
     def do_feedback(self, args: argparse.Namespace):
         if args.field == 'led':
-            r, g, b = self._tracker.feedback_report.led_color
+            # Gamma corrected value (with gamma=1/3)
+            r, g, b = (min(int(math.pow(c/255, 1/3) * 255), 255) for c in self._tracker.feedback_report.led_color)
             flash_on, flash_off = self._tracker.feedback_report.led_flash_on, self._tracker.feedback_report.led_flash_off
             print(f'{sty.fg(r, g, b)}●{sty.fg.rs} #{r:02x}{g:02x}{b:02x} ({flash_on} on {flash_off} off)')
         elif args.field == 'rumble':
