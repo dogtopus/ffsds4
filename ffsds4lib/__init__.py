@@ -91,6 +91,7 @@ class DS4Function(functionfs.HIDFunction):
     Third party PS4 controller function.
     """
     _profile: Optional[cProfile.Profile]
+    _profile_file: Optional[str]
     def __init__(self, ds4key_path: str, turbo: bool = False, aligned: bool = False, profile: Optional[str]=None, **kw) -> None:
         if profile is not None:
             self._profile = cProfile.Profile()
