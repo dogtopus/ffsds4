@@ -97,7 +97,8 @@ class DS4Function(functionfs.HIDFunction):
             self._profile_file = profile
             self._profile.enable()
         else:
-            self.profile = None
+            self._profile = None
+            self._profile_file = None
 
         super().__init__(
             report_descriptor=REPORT_DESCRIPTOR,

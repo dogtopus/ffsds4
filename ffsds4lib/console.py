@@ -207,5 +207,8 @@ class Console(cmd.Cmd):
             rr_intensity = '| |' if rr == 0 else f'|{BARS[min((rr - 1) // 32, 7)]}|'
             print(f'{rl_intensity} {rl:03d}   {rr_intensity} {rr:03d}')
 
+    def do_fb(self, arg: str):
+        return self.do_feedback(arg)
+
     def do_connected(self, _arg: str):
         print(f'{sty.fg.green}●{sty.fg.rs} Connected.' if self._function.connected.is_set() else f'{sty.fg.red}●{sty.fg.rs} Disconnected.')
