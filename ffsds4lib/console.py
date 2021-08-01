@@ -3,6 +3,7 @@
 #
 # This file is part of FFSDS4
 # Copyright (C) 2021-  dogtopus
+from __future__ import annotations
 
 import argparse
 import cmd
@@ -66,7 +67,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
     @functools.wraps(func)
-    def _wrapper(self: 'Console', args: str) -> Optional[bool]:
+    def _wrapper(self: Console, args: str) -> Optional[bool]:
         if self._function.connected.wait(1):
             return func(self, args)
         else:
@@ -78,7 +79,7 @@ def wait_for_connect(func: ConsoleDoMethod) -> ConsoleDoMethod:
 def use_argparse(insert_subcmd: Optional[str] = None) -> Callable[[ConsoleArgparseDoMethod], ConsoleDoMethod]:
     def _decorator(func: ConsoleArgparseDoMethod) -> ConsoleDoMethod:
         @functools.wraps(func)
-        def _wrapper(self: 'Console', args: str) -> Optional[bool]:
+        def _wrapper(self: Console, args: str) -> Optional[bool]:
             shlex_args = shlex.split(args)
             if insert_subcmd is not None:
                 shlex_args.insert(0, insert_subcmd)
@@ -96,7 +97,7 @@ def use_argparse(insert_subcmd: Optional[str] = None) -> Callable[[ConsoleArgpar
 
 
 class Console(cmd.Cmd):
-    _function: "DS4Function"
+    _function: DS4Function
     _tracker: ds4.DS4StateTracker
     _sequencer: sequencer.Sequencer
     _parser: argparse.ArgumentParser
@@ -104,7 +105,7 @@ class Console(cmd.Cmd):
     intro = ('FFSDS4 Console\n'
              'Type "help" for usage.')
     prompt = '(ffsds4) '
-    def __init__(self, function: "DS4Function", *args, **kwargs):
+    def __init__(self, function: DS4Function, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._function = function
         self._tracker = function.tracker

@@ -3,6 +3,7 @@
 #
 # This file is part of FFSDS4
 # Copyright (C) 2021-  dogtopus
+from __future__ import annotations
 
 import ctypes
 import copy
@@ -593,7 +594,7 @@ class DS4Key:
 # OK Java code
 # Also f*** all Python IDEs. Yes, all of them >(.
 class ReportModificationContext(ContextManager[InputReport]):
-    def __init__(self, tracker: "DS4StateTracker") -> None:
+    def __init__(self, tracker: DS4StateTracker) -> None:
         self._tracker = tracker
 
     def __enter__(self) -> InputReport:
@@ -605,7 +606,7 @@ class ReportModificationContext(ContextManager[InputReport]):
 
 
 class DS4TouchStateTracker:
-    def __init__(self, parent: 'DS4StateTracker'):
+    def __init__(self, parent: DS4StateTracker):
         self._tp_touch_autoindex = 0
         self._last_known_tp_frame = TouchFrame()
         self._last_known_tp_frame.clear()
@@ -683,7 +684,7 @@ class DS4TouchStateTracker:
 class DS4IMUStateTracker:
     _position: Tuple[float, float, float]
     _attitude: Tuple[float, float, float]
-    def __init__(self, parent: 'DS4StateTracker', get_current_time: Callable[[], float] = time.monotonic):
+    def __init__(self, parent: DS4StateTracker, get_current_time: Callable[[], float] = time.monotonic):
         self._parent = weakref.proxy(parent)
         self._sustain = True
         self._use_attitude_position = False

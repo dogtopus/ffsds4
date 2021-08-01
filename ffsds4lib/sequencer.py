@@ -3,6 +3,7 @@
 #
 # This file is part of FFSDS4
 # Copyright (C) 2021-  dogtopus
+from __future__ import annotations
 
 import cmath
 import enum
@@ -53,7 +54,7 @@ class ControllerEventType(enum.Enum):
 @functools.total_ordering
 class ControllerEvent:
     target: InputTypeIdentifier
-    next_: Optional["ControllerEvent"]
+    next_: Optional[ControllerEvent]
     def __init__(self, at: float, op: ControllerEventType, target: InputTypeIdentifier, is_tween: Optional[bool] = False) -> None:
         self.at = at
         self.op = op
@@ -73,12 +74,12 @@ class ControllerEvent:
         return self.at == other.at
 
     def cancel(self) -> None:
-        next_: Optional["ControllerEvent"] = self
+        next_: Optional[ControllerEvent] = self
         while next_ is not None:
             next_.cancelled = True
             next_ = next_.next_
 
-    def chain(self, at: float, op: ControllerEventType, target: Tuple[InputTargetType, Any]) -> "ControllerEvent":
+    def chain(self, at: float, op: ControllerEventType, target: Tuple[InputTargetType, Any]) -> ControllerEvent:
         self.next_ = ControllerEvent(at, op, target)
         return self.next_
 

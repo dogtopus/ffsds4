@@ -23,7 +23,7 @@
 """
 Third party PS4 controller emulator based on python-functionfs and its HID example.
 """
-from __future__ import print_function
+from __future__ import print_function, annotations
 import cProfile
 import ctypes
 import functools
@@ -52,7 +52,7 @@ class HIDINEndpoint(functionfs.EndpointINFile):
     """
     Customise what happens on IN transfer completion.
     """
-    def __init__(self, controller_instance: "DS4Function", *args, **kwargs):
+    def __init__(self, controller_instance: DS4Function, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._controller_instance = controller_instance
 
@@ -72,7 +72,7 @@ class HIDOUTEndpoint(functionfs.EndpointOUTFile):
     """
     Customise what happens on OUT transfer completion.
     """
-    def __init__(self, controller_instance: "DS4Function", *args, **kwargs):
+    def __init__(self, controller_instance: DS4Function, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._controller_instance = controller_instance
 
