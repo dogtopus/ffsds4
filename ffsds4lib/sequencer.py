@@ -31,7 +31,9 @@ from typing import (
     List,
     Iterable,
     Sized,
-    Literal
+    Literal,
+    NamedTuple,
+    Protocol,
 )
 
 from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType, DPadPosition
@@ -40,6 +42,23 @@ logger = logging.getLogger('ffsds4.sequencer')
 
 
 InputTypeIdentifier = Tuple[InputTargetType, Any]
+StickCoordUnit = Literal['cartesian', 'polar', 'raw']
+
+
+def stick_to_native(xy: Tuple[float, float], unit: StickCoordUnit) -> Tuple[int, int]:
+    '''
+    Convert stick coordinate to native report format.
+    '''
+    if unit == 'raw':
+        return int(xy[0]), int(xy[1])
+    elif unit == 'polar':
+        # Abuse cmath.rect() to convert polar to cartesian coordinates
+        rect = cmath.rect(xy[0], xy[1] / (180/math.pi))
+        return max(min(round((rect.real+1) / 2 * 255), 255), 0), max(min(round((rect.imag+1) / 2 * 255), 255), 0)
+    elif unit == 'cartesian':
+        return max(min(round((xy[0]+1) / 2 * 255), 255), 0), max(min(round((xy[1]+1) / 2 * 255), 255), 0)
+    else:
+        raise ValueError('Invalid unit.')
 
 
 HOLDING_DPAD = (DPadPosition, None)
@@ -50,6 +69,7 @@ HOLDING_RSTICK = ('stick', 'r')
 class ControllerEventType(enum.Enum):
     press = enum.auto()
     release = enum.auto()
+
 
 @functools.total_ordering
 class ControllerEvent:
@@ -197,6 +217,9 @@ class BaseTween:
         return (t - self.start) / self.duration
 
 
+AnyTween = TypeVar('AnyTween', bound=BaseTween)
+
+
 class LinearTween(BaseTween):
     '''
     A linear tween.
@@ -217,13 +240,59 @@ class PolyEaseTween(BaseTween):
         return (2 ** (self.exp - 1) * p ** self.exp) if p < 0.5 else (1 - (-2 * p + 2) ** self.exp / 2)
 
 
+def _validate_optional_tween_pair(name: str, pair: Optional[Tuple[BaseTween, BaseTween]]) -> None:
+    if pair is not None and not (math.isclose(pair[0].start, pair[1].start) and math.isclose(pair[0].duration, pair[1].duration)):
+        raise ValueError(f'Tween pair for {name} is not synchronized.')
+
+
+class BaseTweenTracker:
+    def generate_input(self, tracker: DS4StateTracker, t: float) -> None:
+        '''
+        Generate input frame for the InputReport report at time t.
+        The caller must acquire the tracker lock to ensure all changes not made by the tracker are atomic.
+        '''
+        raise NotImplementedError()
+
+
+AnyTweenTracker = TypeVar('AnyTweenTracker', bound=BaseTweenTracker)
+
+
+class StickTweenTracker(BaseTweenTracker):
+    _left: Optional[Tuple[BaseTween, BaseTween]]
+    _right: Optional[Tuple[BaseTween, BaseTween]]
+
+    def __init__(self, unit: StickCoordUnit, left: Optional[Tuple[BaseTween, BaseTween]] = None, right: Optional[Tuple[BaseTween, BaseTween]] = None):
+        self._left = self._right = None
+        _validate_optional_tween_pair('left stick', left)
+        _validate_optional_tween_pair('right stick', right)
+        if left is not None and right is not None and not (math.isclose(left[0].start, right[0].start) and math.isclose(left[0].duration, right[0].duration)):
+            raise ValueError('Left and right stick tween pairs are not synchronized.')
+
+        self._left = left
+        self._right = right
+        self._unit = unit
+
+    def generate_input(self, tracker: DS4StateTracker, t: float) -> None:
+        stick: Tuple[int, int]
+        with tracker.start_modify_report() as report:
+            if self._left is not None:
+                stick = stick_to_native((self._left[0].at(t), self._left[1].at(t)), self._unit)
+                report.set_stick(left=stick)
+            if self._right is not None:
+                stick = stick_to_native((self._right[0].at(t), self._right[1].at(t)), self._unit)
+                report.set_stick(right=stick)
+
+
 class Sequencer:
     _event_queue_new: HeapqWrapper[ControllerEvent]
     _holding: Dict[InputTypeIdentifier, ControllerEvent]
+    _tweens: List[BaseTweenTracker]
+
     def __init__(self, tracker: DS4StateTracker) -> None:
         self._tracker = tracker
         self._event_queue_new = HeapqWrapper()
         self._holding = {}
+        self._tweens = []
         self._tick_interval = 0.004
         self._min_release_time = max(1 / 60, self._tick_interval * 4)
         self._tick_thread = threading.Thread(target=self._tick)
@@ -256,7 +325,7 @@ class Sequencer:
                             self._alarm.reschedule(next_time)
                             break
                     # TODO tween processing
-                    if len(events) == 0:
+                    if len(events) == 0 and len(self._tweens) == 0:
                         continue
                     logger.debug('%d events collected', len(events))
                     with self._tracker.start_modify_report() as report:
@@ -266,8 +335,26 @@ class Sequencer:
                                 report.set_button(ev_on_id, ev.op == ControllerEventType.press)
                             elif ev_on_type == DPadPosition:
                                 report.set_dpad(DPadPosition.neutral if ev.op == ControllerEventType.release else ev_on_id)
+                            # Tweens
+                            elif isinstance(ev_on_id, BaseTweenTracker):
+                                self._tweens.append(ev_on_id)
                             if ev.next_ is None:
                                 del self._holding[ev.target if ev_on_type != DPadPosition else HOLDING_DPAD]
+
+                        # TODO Set sensor timestamp?
+                        current_time = time.monotonic()
+                        expired_tweens: List[BaseTweenTracker] = []
+                        for tw in self._tweens:
+                            # TODO check expiry
+                            #if tw.isexpired(current_time):
+                            #    expired_tweens.append(tw)
+                            #else:
+                            # Passing the tracker but with input lock acquired to make all changes
+                            # to the input report happen atomically.
+                            tw.generate_input(self._tracker, current_time)
+                        # Clean up expired tweens
+                        for tw in expired_tweens:
+                            self._tweens.remove(tw)
 
         except Exception:
             logger.exception('Unhandled exception in tick thread.')
@@ -278,19 +365,6 @@ class Sequencer:
 
     def _reschedule_alarm(self):
         self._alarm.reschedule(self._event_queue_new.peek().at)
-
-    @staticmethod
-    def _stick_to_native(xy: Tuple[float, float], unit: Literal['cartesian', 'polar', 'raw']) -> Tuple[int, int]:
-        if unit == 'raw':
-            return int(xy[0]), int(xy[1])
-        elif unit == 'polar':
-            # Abuse cmath.rect() to convert polar to cartesian coordinates
-            rect = cmath.rect(xy[0], xy[1] / (180/math.pi))
-            return max(min(round((rect.real+1) / 2 * 255), 255), 0), max(min(round((rect.imag+1) / 2 * 255), 255), 0)
-        elif unit == 'cartesian':
-            return max(min(round((xy[0]+1) / 2 * 255), 255), 0), max(min(round((xy[1]+1) / 2 * 255), 255), 0)
-        else:
-            raise ValueError('Invalid unit.')
 
     def start(self) -> None:
         '''
@@ -478,10 +552,10 @@ class Sequencer:
             self._holding[HOLDING_RSTICK].cancel()
             del self._holding[HOLDING_RSTICK]
 
-    def hold_stick(self, left: Tuple[float, float], right: Tuple[float, float], unit: Literal['cartesian', 'polar', 'raw'] = 'cartesian') -> None:
+    def hold_stick(self, left: Tuple[float, float], right: Tuple[float, float], unit: StickCoordUnit = 'cartesian') -> None:
         with self._tracker.start_modify_report() as report, self._mutex:
             self._cancel_sticks()
-            report.set_stick(self._stick_to_native(left, unit), self._stick_to_native(right, unit))
+            report.set_stick(stick_to_native(left, unit), stick_to_native(right, unit))
 
     def release_stick(self):
         with self._tracker.start_modify_report() as report, self._mutex:
