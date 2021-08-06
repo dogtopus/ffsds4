@@ -253,6 +253,11 @@ class BaseTweenTracker:
         '''
         raise NotImplementedError()
 
+    def isexpired(self, t: float) -> bool:
+        '''
+        Return True when the tween is expired.
+        '''
+        return True
 
 AnyTweenTracker = TypeVar('AnyTweenTracker', bound=BaseTweenTracker)
 
@@ -263,6 +268,8 @@ class StickTweenTracker(BaseTweenTracker):
 
     def __init__(self, unit: StickCoordUnit, left: Optional[Tuple[BaseTween, BaseTween]] = None, right: Optional[Tuple[BaseTween, BaseTween]] = None):
         self._left = self._right = None
+        if left is None and right is None:
+            raise ValueError('Left and right stick tween pair cannot both be None.')
         _validate_optional_tween_pair('left stick', left)
         _validate_optional_tween_pair('right stick', right)
         if left is not None and right is not None and not (math.isclose(left[0].start, right[0].start) and math.isclose(left[0].duration, right[0].duration)):
@@ -281,6 +288,13 @@ class StickTweenTracker(BaseTweenTracker):
             if self._right is not None:
                 stick = stick_to_native((self._right[0].at(t), self._right[1].at(t)), self._unit)
                 report.set_stick(right=stick)
+
+    def isexpired(self, t: float) -> bool:
+        if self._left is not None:
+            return self._left[0].progression(t) > 1
+        if self._right is not None:
+            return self._right[0].progression(t) > 1
+        assert False, 'This should never be reached.'
 
 
 class Sequencer:
@@ -341,17 +355,17 @@ class Sequencer:
                             if ev.next_ is None:
                                 del self._holding[ev.target if ev_on_type != DPadPosition else HOLDING_DPAD]
 
-                        # TODO Set sensor timestamp?
                         current_time = time.monotonic()
                         expired_tweens: List[BaseTweenTracker] = []
                         for tw in self._tweens:
-                            # TODO check expiry
-                            #if tw.isexpired(current_time):
-                            #    expired_tweens.append(tw)
-                            #else:
-                            # Passing the tracker but with input lock acquired to make all changes
-                            # to the input report happen atomically.
-                            tw.generate_input(self._tracker, current_time)
+                            # check expiry
+                            if tw.isexpired(current_time):
+                                expired_tweens.append(tw)
+                                # TODO how do we reset the reports?
+                            else:
+                                # Passing the tracker but with input lock acquired to make all changes
+                                # to the input report happen atomically.
+                                tw.generate_input(self._tracker, current_time)
                         # Clean up expired tweens
                         for tw in expired_tweens:
                             self._tweens.remove(tw)
