@@ -247,11 +247,13 @@ class InputReport(ctypes.LittleEndianStructure):
         self.buttons[1] = 0
         self.buttons[2] = 0
 
-    def set_stick(self, left: Tuple[int, int], right: Tuple[int, int]) -> None:
-        self.sticks[0] = left[0]
-        self.sticks[1] = left[1]
-        self.sticks[2] = right[0]
-        self.sticks[3] = right[1]
+    def set_stick(self, left: Optional[Tuple[int, int]] = None, right: Optional[Tuple[int, int]] = None) -> None:
+        if left is not None:
+            self.sticks[0] = left[0]
+            self.sticks[1] = left[1]
+        if right is not None:
+            self.sticks[2] = right[0]
+            self.sticks[3] = right[1]
 
     def set_dpad(self, position: DPadPosition) -> None:
         position = DPadPosition(position)
