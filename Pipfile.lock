@@ -274,11 +274,11 @@
         },
         "tuna": {
             "hashes": [
-                "sha256:2a47765b323f9b2d607df79d2abf96a2b8fdbf57fd0e78b888dc5d96f3508eda",
-                "sha256:6cb7e3ea85466b02f5ad3d8f9dbc895336fab539d84ab3653f0c30a264e54a32"
+                "sha256:99c8392441bdf1b2c2df6fdf07f6c43186030f7fe038579faea89a8a82c0883c",
+                "sha256:b7e6c2a754d1242c41ed1ec075733bba7f3d562631e9362468f39251250552dd"
             ],
             "index": "pypi",
-            "version": "==0.5.7"
+            "version": "==0.5.8"
         },
         "typing-extensions": {
             "hashes": [
