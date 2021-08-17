@@ -15,7 +15,9 @@ import time
 import logging
 import heapq
 from typing import (
+    cast,
     Any,
+    Final,
     Sequence,
     Optional,
     Set,
@@ -36,12 +38,38 @@ from typing import (
     Protocol,
 )
 
-from .ds4 import DS4StateTracker, ButtonType, InputReport, InputTargetType, DPadPosition
+from .ds4 import DS4StateTracker, ButtonType, InputReport, DPadPosition
 
 logger = logging.getLogger('ffsds4.sequencer')
 
+ButtonInputTarget = Type[ButtonType]
+DPadInputTarget = Type[DPadPosition]
 
-InputTypeIdentifier = Tuple[InputTargetType, Any]
+
+class NonbinaryInputTarget(enum.Enum):
+    sticks = enum.auto()
+    triggers = enum.auto()
+    touchpad = enum.auto()
+    imu = enum.auto()
+
+
+InputTargetType = Union[
+    ButtonInputTarget,
+    DPadInputTarget,
+    NonbinaryInputTarget,
+    str,
+]
+# TODO these are not exact enough. Maybe we should use Union[Tuple[ButtonInputTarget, ButtonType], Tuple[InputTargetTypeExceptButton, Literal[None]]] instead?
+InputTypeIdentifier = Union[
+    Tuple[ButtonInputTarget, ButtonType],
+    Tuple[DPadInputTarget, DPadPosition],
+    Tuple[NonbinaryInputTarget, None],
+]
+ChannelIdentifier = Union[
+    Tuple[ButtonInputTarget, ButtonType],
+    Tuple[DPadInputTarget, None],
+    Tuple[NonbinaryInputTarget, None],
+]
 StickCoordUnit = Literal['cartesian', 'polar', 'raw']
 
 
@@ -62,26 +90,75 @@ def stick_to_native(xy: Tuple[float, float], unit: StickCoordUnit) -> Tuple[int,
 
 
 HOLDING_DPAD = (DPadPosition, None)
-HOLDING_LSTICK = ('stick', 'l')
-HOLDING_RSTICK = ('stick', 'r')
 
-
-class ControllerEventType(enum.Enum):
+class SingleShotEventType(enum.Enum):
     press = enum.auto()
     release = enum.auto()
+
+
+class BaseTweenTracker:
+    def generate_input(self, tracker: DS4StateTracker, t: float) -> None:
+        '''
+        Generate input frame for the InputReport report at time t.
+        The caller must acquire the tracker lock to ensure all changes not made by the tracker are atomic.
+        '''
+        raise NotImplementedError()
+
+    def isexpired(self, t: float) -> bool:
+        '''
+        Return True when the tween is expired.
+        '''
+        return True
+
+    def cancel_and_reset(self, tracker: DS4StateTracker):
+        '''
+        Cancel this tween tracker and reset the controller states it manages
+        back to neutral. Called on certain types of animation cancellation.
+        '''
+        raise NotImplementedError()
+
+
+AnyTweenTracker = TypeVar('AnyTweenTracker', bound=BaseTweenTracker)
+
+
+ControllerEventType = Union[SingleShotEventType, BaseTweenTracker]
+
+class EventChainNode(NamedTuple):
+    at_relative: float
+    op: ControllerEventType
+    target: InputTypeIdentifier
 
 
 @functools.total_ordering
 class ControllerEvent:
     target: InputTypeIdentifier
     next_: Optional[ControllerEvent]
-    def __init__(self, at: float, op: ControllerEventType, target: InputTypeIdentifier, is_tween: Optional[bool] = False) -> None:
+    def __init__(self, at: float, op: ControllerEventType, target: InputTypeIdentifier) -> None:
         self.at = at
         self.op = op
         self.target = target
         self.cancelled = False
         self.next_ = None
-        self.is_tween = is_tween
+
+    @classmethod
+    def make_event_chain(cls, at: float, chain: Sequence[EventChainNode]) -> Optional[ControllerEvent]:
+        if len(chain) == 0:
+            return None
+        thehead, therest = chain[0], chain[1:]
+        result = cls(thehead.at_relative + at, thehead.op, thehead.target)
+        curr = result
+        for n in therest:
+            curr = curr.chain(n.at_relative + at, n.op, n.target)
+        return result
+
+    @property
+    def target_channel_id(self) -> ChannelIdentifier:
+        if self.target[0] == DPadPosition:
+            return HOLDING_DPAD
+        else:
+            # The only difference between ChannelIdentifier and InputTargetIdentifier is the omission of DPad.
+            # Cast the sanitized channel as ChannelIdentifier.
+            return cast(ChannelIdentifier, self.target)
 
     def __lt__(self, other: object):
         if not isinstance(other, ControllerEvent):
@@ -99,7 +176,7 @@ class ControllerEvent:
             next_.cancelled = True
             next_ = next_.next_
 
-    def chain(self, at: float, op: ControllerEventType, target: Tuple[InputTargetType, Any]) -> ControllerEvent:
+    def chain(self, at: float, op: ControllerEventType, target: InputTypeIdentifier) -> ControllerEvent:
         self.next_ = ControllerEvent(at, op, target)
         return self.next_
 
@@ -187,11 +264,32 @@ class BaseTween:
     '''
     Base of tween objects.
     '''
+    _start: float
+    _duration: float
+    _from_to: Tuple[float, float]
+    _done: bool
+
     def __init__(self, start: float, duration: float, from_to: Tuple[float, float]) -> None:
-        self.start = start
-        self.duration = duration
-        self.from_to = from_to
-        self.done = False
+        self._start = start
+        self._duration = duration
+        self._from_to = from_to
+        self._done = False
+
+    @property
+    def start(self) -> float:
+        return self._start
+
+    @property
+    def duration(self) -> float:
+        return self._duration
+
+    @property
+    def from_to(self) -> Tuple[float, float]:
+        return self._from_to
+
+    @property
+    def done(self) -> bool:
+        return self._done
 
     def at(self, t: float) -> float:
         '''
@@ -199,12 +297,12 @@ class BaseTween:
         '''
         p = self.progression(t)
         if p >= 1:
-            self.done = True
-            return self.from_to[1]
+            self._done = True
+            return self._from_to[1]
         elif p < 0:
-            return self.from_to[0]
+            return self._from_to[0]
         else:
-            return self.from_to[0] + (self.from_to[1] - self.from_to[0]) * self._at(p)
+            return self._from_to[0] + (self._from_to[1] - self._from_to[0]) * self._at(p)
 
     def _at(self, p: float) -> float:
         '''
@@ -214,7 +312,7 @@ class BaseTween:
         raise NotImplementedError('_at')
 
     def progression(self, t: float) -> float:
-        return (t - self.start) / self.duration
+        return (t - self._start) / self._duration
 
 
 AnyTween = TypeVar('AnyTween', bound=BaseTween)
@@ -243,23 +341,6 @@ class PolyEaseTween(BaseTween):
 def _validate_optional_tween_pair(name: str, pair: Optional[Tuple[BaseTween, BaseTween]]) -> None:
     if pair is not None and not (math.isclose(pair[0].start, pair[1].start) and math.isclose(pair[0].duration, pair[1].duration)):
         raise ValueError(f'Tween pair for {name} is not synchronized.')
-
-
-class BaseTweenTracker:
-    def generate_input(self, tracker: DS4StateTracker, t: float) -> None:
-        '''
-        Generate input frame for the InputReport report at time t.
-        The caller must acquire the tracker lock to ensure all changes not made by the tracker are atomic.
-        '''
-        raise NotImplementedError()
-
-    def isexpired(self, t: float) -> bool:
-        '''
-        Return True when the tween is expired.
-        '''
-        return True
-
-AnyTweenTracker = TypeVar('AnyTweenTracker', bound=BaseTweenTracker)
 
 
 class StickTweenTracker(BaseTweenTracker):
@@ -291,21 +372,33 @@ class StickTweenTracker(BaseTweenTracker):
 
     def isexpired(self, t: float) -> bool:
         if self._left is not None:
-            return self._left[0].progression(t) > 1
+            return self._left[0].done
         if self._right is not None:
-            return self._right[0].progression(t) > 1
+            return self._right[0].done
         assert False, 'This should never be reached.'
+
+    def cancel_and_reset(self, tracker: DS4StateTracker):
+        with tracker.start_modify_report() as report:
+            report.set_stick(left=(0x80, 0x80), right=(0x80, 0x80))
 
 
 class Sequencer:
     _event_queue_new: HeapqWrapper[ControllerEvent]
-    _holding: Dict[InputTypeIdentifier, ControllerEvent]
+    _holding: Dict[ChannelIdentifier, ControllerEvent]
     _tweens: List[BaseTweenTracker]
+    _end_of_chain_tween_channels: Set[ChannelIdentifier]
 
+    _TWEEN_TRACKER_TO_CHANNEL: Final[Dict[Type[BaseTweenTracker], ChannelIdentifier]] = {
+        StickTweenTracker: (NonbinaryInputTarget.sticks, None),
+        #TriggerTweenTracker: (NonbinaryInputTarget.triggers, None),
+        #TouchpadTweenTracker: (NonbinaryInputTarget.touchpad, None),
+        #IMUTweenTracker: (NonbinaryInputTarget.imu, None),
+    }
     def __init__(self, tracker: DS4StateTracker) -> None:
         self._tracker = tracker
         self._event_queue_new = HeapqWrapper()
         self._holding = {}
+        self._end_of_chain_tween_channels = set()
         self._tweens = []
         self._tick_interval = 0.004
         self._min_release_time = max(1 / 60, self._tick_interval * 4)
@@ -346,14 +439,20 @@ class Sequencer:
                         for ev in events:
                             ev_on_type, ev_on_id = ev.target
                             if ev_on_type == ButtonType:
-                                report.set_button(ev_on_id, ev.op == ControllerEventType.press)
+                                # This is guaranteed to be button type
+                                report.set_button(cast(ButtonType, ev_on_id), ev.op == SingleShotEventType.press)
                             elif ev_on_type == DPadPosition:
-                                report.set_dpad(DPadPosition.neutral if ev.op == ControllerEventType.release else ev_on_id)
+                                # Similar here
+                                report.set_dpad(DPadPosition.neutral if ev.op == SingleShotEventType.release else cast(DPadPosition, ev_on_id))
                             # Tweens
-                            elif isinstance(ev_on_id, BaseTweenTracker):
-                                self._tweens.append(ev_on_id)
+                            elif isinstance(ev_on_type, NonbinaryInputTarget) and isinstance(ev.op, BaseTweenTracker):
+                                self._tweens.append(ev.op)
                             if ev.next_ is None:
-                                del self._holding[ev.target if ev_on_type != DPadPosition else HOLDING_DPAD]
+                                # Defer the channel freeing if it's driven by a tween
+                                if isinstance(ev_on_type, NonbinaryInputTarget):
+                                    self._end_of_chain_tween_channels.add(ev.target_channel_id)
+                                else:
+                                    del self._holding[ev.target_channel_id]
 
                         current_time = time.monotonic()
                         expired_tweens: List[BaseTweenTracker] = []
@@ -366,9 +465,13 @@ class Sequencer:
                                 # Passing the tracker but with input lock acquired to make all changes
                                 # to the input report happen atomically.
                                 tw.generate_input(self._tracker, current_time)
-                        # Clean up expired tweens
+                        # Clean up expired tweens and mark the channel as free (is needed)
                         for tw in expired_tweens:
                             self._tweens.remove(tw)
+                            ch = self._TWEEN_TRACKER_TO_CHANNEL[type(tw)]
+                            if ch in self._end_of_chain_tween_channels:
+                                del self._holding[ch]
+                                self._end_of_chain_tween_channels.remove(ch)
 
         except Exception:
             logger.exception('Unhandled exception in tick thread.')
@@ -434,8 +537,8 @@ class Sequencer:
                         report.set_button(button, False)
 
                     # New event chain
-                    event_press = ControllerEvent(at=start_time+self._min_release_time, op=ControllerEventType.press, target=target)
-                    event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=ControllerEventType.release, target=target)
+                    event_press = ControllerEvent(at=start_time+self._min_release_time, op=SingleShotEventType.press, target=target)
+                    event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=SingleShotEventType.release, target=target)
 
                     self._holding[target] = event_press
 
@@ -449,7 +552,7 @@ class Sequencer:
                         report.set_button(button, True)
 
                     # Hold until hold_until seconds later and release
-                    event = ControllerEvent(at=hold_until, op=ControllerEventType.release, target=target)
+                    event = ControllerEvent(at=hold_until, op=SingleShotEventType.release, target=target)
                     self._holding[target] = event
                     self._event_queue_new.push(event)
             self._reschedule_alarm()
@@ -480,8 +583,8 @@ class Sequencer:
                 with self._tracker.start_modify_report() as report:
                     report.set_dpad(DPadPosition.neutral)
 
-                event_press = ControllerEvent(at=start_time+self._min_release_time, op=ControllerEventType.press, target=target)
-                event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=ControllerEventType.release, target=target)
+                event_press = ControllerEvent(at=start_time+self._min_release_time, op=SingleShotEventType.press, target=target)
+                event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=SingleShotEventType.release, target=target)
 
                 self._holding[HOLDING_DPAD] = event_press
 
@@ -495,7 +598,7 @@ class Sequencer:
                     report.set_dpad(dpad_pos)
 
                 # Hold until hold_until seconds later and release
-                event = ControllerEvent(at=hold_until, op=ControllerEventType.release, target=target)
+                event = ControllerEvent(at=hold_until, op=SingleShotEventType.release, target=target)
                 self._holding[HOLDING_DPAD] = event
                 self._event_queue_new.push(event)
 
@@ -558,20 +661,12 @@ class Sequencer:
     def release_dpad(self):
         self.hold_release_dpad(DPadPosition.neutral)
 
-    def _cancel_sticks(self):
-        if HOLDING_LSTICK in self._holding:
-            self._holding[HOLDING_LSTICK].cancel()
-            del self._holding[HOLDING_LSTICK]
-        if HOLDING_RSTICK in self._holding:
-            self._holding[HOLDING_RSTICK].cancel()
-            del self._holding[HOLDING_RSTICK]
-
     def hold_stick(self, left: Tuple[float, float], right: Tuple[float, float], unit: StickCoordUnit = 'cartesian') -> None:
         with self._tracker.start_modify_report() as report, self._mutex:
-            self._cancel_sticks()
+            #self._cancel_sticks()
             report.set_stick(stick_to_native(left, unit), stick_to_native(right, unit))
 
     def release_stick(self):
         with self._tracker.start_modify_report() as report, self._mutex:
-            self._cancel_sticks()
+            #self._cancel_sticks()
             report.set_stick((0x80, 0x80), (0x80, 0x80))

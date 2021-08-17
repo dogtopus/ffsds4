@@ -70,11 +70,7 @@ class DPadPosition(enum.IntFlag):
 
 
 UDCFriendlyBuffer = Union[mmap.mmap, bytearray]
-InputTargetType = Union[
-    Type[ButtonType],
-    Type[DPadPosition],
-    str,
-]
+
 
 # Workaround the "mostly broken" ctypes type hints by trying to define a
 # compatible interface for ctypes array classes.
