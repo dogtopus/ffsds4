@@ -31,7 +31,7 @@ jobs:
       run: pipenv run lint-minimal
 
     - name: Run mypy scan
-      run: pipenv run mypy
+      run: pipenv run typecheck
 
     - name: Run test cases
       run: pipenv run test
