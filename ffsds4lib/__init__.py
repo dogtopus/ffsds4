@@ -128,7 +128,7 @@ class DS4Function(functionfs.HIDFunction):
         self.console = console.Console(self)
         self.connected = threading.Event()
         self.connected.clear()
-        self.console_task = threading.Thread(target=self.console.cmdloop)
+        self.console_task = threading.Thread(target=self.console.cmdloop, name='DS4Function.console.cmdloop')
         logger.info('Gadget initialized. Dropping console.')
         self.console_task.start()
 

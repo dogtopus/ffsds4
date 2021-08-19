@@ -211,8 +211,8 @@ class HeapqWrapper(Generic[HeapqElement], Sized):
 
 
 class ReschedulableAlarm(threading.Thread):
-    def __init__(self, func: Callable[..., None], args: Optional[Sequence[Any]]=None, kwargs: Optional[Mapping[Any, Any]]=None):
-        super().__init__()
+    def __init__(self, func: Callable[..., None], name: Optional[str] = None, args: Optional[Sequence[Any]] = None, kwargs: Optional[Mapping[Any, Any]] = None):
+        super().__init__(name=name)
         self._func: Callable[..., None] = func
         self._args = args if args is not None else tuple()
         self._kwargs = kwargs if kwargs is not None else dict()
@@ -402,11 +402,11 @@ class Sequencer:
         self._tweens = []
         self._tick_interval = 0.004
         self._min_release_time = max(1 / 60, self._tick_interval * 4)
-        self._tick_thread = threading.Thread(target=self._tick)
+        self._tick_thread = threading.Thread(target=self._tick, name='Sequencer._tick')
         self._shutdown_flag = False
         self._mutex = threading.RLock()
         self._wakeup_cond = threading.Condition(self._mutex)
-        self._alarm = ReschedulableAlarm(self._on_alarm)
+        self._alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._alarm')
 
     def _on_alarm(self) -> None:
         with self._mutex:
@@ -493,14 +493,14 @@ class Sequencer:
             self._tick_thread.start()
         except RuntimeError:
             logger.debug('Attempting to restart the sequencer tick thread.')
-            self._tick_thread = threading.Thread(target=self._tick)
+            self._tick_thread = threading.Thread(target=self._tick, name='Sequencer._tick')
             self._tick_thread.start()
 
         try:
             self._alarm.start()
         except RuntimeError:
             logger.debug('Attempting to restart the sequencer alarm thread.')
-            self._alarm = ReschedulableAlarm(self._on_alarm)
+            self._alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._alarm')
             self._alarm.start()
 
     def shutdown(self) -> None:
