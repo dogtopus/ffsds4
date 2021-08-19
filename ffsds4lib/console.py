@@ -159,7 +159,7 @@ class Console(cmd.Cmd):
         buttons, dpad_pos = self._parse_button_type(args.buttons)
 
         if dpad_pos is not None:
-            self._sequencer.queue_press_dpad(dpad_pos)
+            self._sequencer.queue_press_dpad(dpad_pos, hold_time if hold_time is not None else 0.05)
         if len(buttons) != 0:
             self._sequencer.queue_press_buttons(buttons, hold_time if hold_time is not None else 0.05)
 

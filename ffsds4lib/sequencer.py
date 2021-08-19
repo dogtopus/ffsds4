@@ -586,8 +586,9 @@ class Sequencer:
         events related to DPad will be cancelled.
         '''
         start_time = time.monotonic()
-        hold_until = start_time + hold
         target = (DPadPosition, dpad_pos)
+        event_chain: List[EventChainNode] = []
+        initial_dpad_state = dpad_pos
 
         if dpad_pos == DPadPosition.neutral:
             self.release_dpad()
@@ -600,27 +601,20 @@ class Sequencer:
                 del self._holding[HOLDING_DPAD]
 
                 # Force the DPad to go back to center
-                with self._tracker.start_modify_report() as report:
-                    report.set_dpad(DPadPosition.neutral)
-
-                event_press = ControllerEvent(at=start_time+self._min_release_time, op=SingleShotEventType.press, target=target)
-                event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=SingleShotEventType.release, target=target)
-
-                self._holding[HOLDING_DPAD] = event_press
+                initial_dpad_state = DPadPosition.neutral
 
                 # Ensure the button is released for at least _min_release_time seconds, then press it.
-                self._event_queue_new.push(event_press)
-                # At hold_until+_min_release_time time, release again
-                self._event_queue_new.push(event_release_final)
-            else:
-                # Press the DPad
-                with self._tracker.start_modify_report() as report:
-                    report.set_dpad(dpad_pos)
+                event_chain.append(EventChainNode(self._min_release_time, SingleShotEventType.press, target))
 
-                # Hold until hold_until seconds later and release
-                event = ControllerEvent(at=hold_until, op=SingleShotEventType.release, target=target)
-                self._holding[HOLDING_DPAD] = event
-                self._event_queue_new.push(event)
+            # Hold until hold seconds later and release
+            event_chain.append(EventChainNode(hold, SingleShotEventType.release, target))
+
+            with self._tracker.start_modify_report() as report:
+                report.set_dpad(initial_dpad_state)
+
+            event = ControllerEvent.make_and_register_event_chain(self._event_queue_new, start_time, event_chain)
+            assert event is not None
+            self._holding[HOLDING_DPAD] = event
 
             self._reschedule_alarm()
 
