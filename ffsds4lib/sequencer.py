@@ -123,7 +123,7 @@ AnyTweenTracker = TypeVar('AnyTweenTracker', bound=BaseTweenTracker)
 ControllerEventType = Union[SingleShotEventType, BaseTweenTracker]
 
 class EventChainNode(NamedTuple):
-    at_relative: float
+    at_diff: float
     op: ControllerEventType
     target: InputTypeIdentifier
 
@@ -144,11 +144,22 @@ class ControllerEvent:
         if len(chain) == 0:
             return None
         thehead, therest = chain[0], chain[1:]
-        result = cls(thehead.at_relative + at, thehead.op, thehead.target)
+        at_now = at + thehead.at_diff
+        result = cls(at_now, thehead.op, thehead.target)
         curr = result
         for n in therest:
-            curr = curr.chain(n.at_relative + at, n.op, n.target)
+            at_now += n.at_diff
+            curr = curr.chain(at_now, n.op, n.target)
         return result
+
+    @classmethod
+    def make_and_register_event_chain(cls, queue: HeapqWrapper[ControllerEvent], at: float, chain: Sequence[EventChainNode]) -> None:
+        evchain = cls.make_event_chain(at, chain)
+        if chain is not None:
+            element = evchain
+            while element is not None:
+                queue.push(element)
+                element = element.next_
 
     @property
     def target_channel_id(self) -> ChannelIdentifier:
