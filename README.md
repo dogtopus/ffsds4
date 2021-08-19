@@ -27,7 +27,7 @@ pipenv run package
 pipenv run package-onefile
 ```
 
-Note that targeting Arm-based hardware requires the use of emulators and like (such as QEMU) or a real Arm-based hardware that runs a Linux distro similar enough to the target board (in terms of libc and libaio versions).
+Note that targeting Arm-based hardware requires the use of emulators and like (such as QEMU) or a real Arm-based hardware that runs a Linux distro similar enough to the target board (in terms of libc version).
 
 If ffsds4 fails with `-EBUSY`, try unloading the kernel module `g_ffs`. If the module is built-in (e.g. on Manjaro ARM for Pinephone), blacklist `gfs_init` function by adding `initcall_blacklist=gfs_init` to the kernel cmdline and reboot the system.
 

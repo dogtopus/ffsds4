@@ -551,36 +551,30 @@ class Sequencer:
         with self._mutex:
             for button in buttons:
                 target = (ButtonType, button)
+                event_chain: List[EventChainNode] = []
+                initial_button_state = True
+
                 if target in self._holding:
                     # Cancel the ongoing event chain for this particular button
                     self._holding[target].cancel()
                     del self._holding[target]
 
-                    # Force the button into release state
-                    with self._tracker.start_modify_report() as report:
-                        report.set_button(button, False)
+                    # Release button first
+                    initial_button_state = False
+                    # Ensure the button is released for at least _min_release_time seconds, then press it.
+                    event_chain.append(EventChainNode(self._min_release_time, SingleShotEventType.press, target))
 
-                    # New event chain
-                    event = ControllerEvent.make_and_register_event_chain(self._event_queue_new, start_time, (
-                        # Ensure the button is released for at least _min_release_time seconds, then press it.
-                        EventChainNode(self._min_release_time, SingleShotEventType.press, target),
-                        # At hold_until+_min_release_time time, release again
-                        EventChainNode(hold, SingleShotEventType.release, target),
-                    ))
+                # Set the button
+                with self._tracker.start_modify_report() as report:
+                    report.set_button(button, initial_button_state)
 
-                    assert event is not None
-                    self._holding[target] = event
-                else:
-                    # Press the button
-                    with self._tracker.start_modify_report() as report:
-                        report.set_button(button, True)
+                # Hold until hold seconds later and release
+                event_chain.append(EventChainNode(hold, SingleShotEventType.release, target))
 
-                    event = ControllerEvent.make_and_register_event_chain(self._event_queue_new, start_time, (
-                        # Hold until hold_until seconds later and release
-                        EventChainNode(hold, SingleShotEventType.release, target),
-                    ))
-                    assert event is not None
-                    self._holding[target] = event
+                event = ControllerEvent.make_and_register_event_chain(self._event_queue_new, start_time, event_chain)
+                assert event is not None
+                self._holding[target] = event
+
             self._reschedule_alarm()
 
     def queue_press_dpad(self, dpad_pos: DPadPosition, hold: float = 0.05) -> None:
