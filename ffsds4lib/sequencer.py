@@ -153,13 +153,14 @@ class ControllerEvent:
         return result
 
     @classmethod
-    def make_and_register_event_chain(cls, queue: HeapqWrapper[ControllerEvent], at: float, chain: Sequence[EventChainNode]) -> None:
+    def make_and_register_event_chain(cls, queue: HeapqWrapper[ControllerEvent], at: float, chain: Sequence[EventChainNode]) -> Optional[ControllerEvent]:
         evchain = cls.make_event_chain(at, chain)
         if chain is not None:
             element = evchain
             while element is not None:
                 queue.push(element)
                 element = element.next_
+        return evchain
 
     @property
     def target_channel_id(self) -> ChannelIdentifier:
@@ -547,7 +548,6 @@ class Sequencer:
         event.
         '''
         start_time = time.monotonic()
-        hold_until = start_time + hold
         with self._mutex:
             for button in buttons:
                 target = (ButtonType, button)
@@ -561,24 +561,26 @@ class Sequencer:
                         report.set_button(button, False)
 
                     # New event chain
-                    event_press = ControllerEvent(at=start_time+self._min_release_time, op=SingleShotEventType.press, target=target)
-                    event_release_final = event_press.chain(at=hold_until+self._min_release_time, op=SingleShotEventType.release, target=target)
+                    event = ControllerEvent.make_and_register_event_chain(self._event_queue_new, start_time, (
+                        # Ensure the button is released for at least _min_release_time seconds, then press it.
+                        EventChainNode(self._min_release_time, SingleShotEventType.press, target),
+                        # At hold_until+_min_release_time time, release again
+                        EventChainNode(hold, SingleShotEventType.release, target),
+                    ))
 
-                    self._holding[target] = event_press
-
-                    # Ensure the button is released for at least _min_release_time seconds, then press it.
-                    self._event_queue_new.push(event_press)
-                    # At hold_until+_min_release_time time, release again
-                    self._event_queue_new.push(event_release_final)
+                    assert event is not None
+                    self._holding[target] = event
                 else:
                     # Press the button
                     with self._tracker.start_modify_report() as report:
                         report.set_button(button, True)
 
-                    # Hold until hold_until seconds later and release
-                    event = ControllerEvent(at=hold_until, op=SingleShotEventType.release, target=target)
+                    event = ControllerEvent.make_and_register_event_chain(self._event_queue_new, start_time, (
+                        # Hold until hold_until seconds later and release
+                        EventChainNode(hold, SingleShotEventType.release, target),
+                    ))
+                    assert event is not None
                     self._holding[target] = event
-                    self._event_queue_new.push(event)
             self._reschedule_alarm()
 
     def queue_press_dpad(self, dpad_pos: DPadPosition, hold: float = 0.05) -> None:
