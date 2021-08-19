@@ -59,7 +59,6 @@ InputTargetType = Union[
     NonbinaryInputTarget,
     str,
 ]
-# TODO these are not exact enough. Maybe we should use Union[Tuple[ButtonInputTarget, ButtonType], Tuple[InputTargetTypeExceptButton, Literal[None]]] instead?
 InputTypeIdentifier = Union[
     Tuple[ButtonInputTarget, ButtonType],
     Tuple[DPadInputTarget, DPadPosition],
@@ -406,7 +405,8 @@ class Sequencer:
         self._shutdown_flag = False
         self._mutex = threading.RLock()
         self._wakeup_cond = threading.Condition(self._mutex)
-        self._alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._alarm')
+        self._event_alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._event_alarm')
+        self._tween_alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._tween_alarm')
 
     def _on_alarm(self) -> None:
         with self._mutex:
@@ -429,7 +429,7 @@ class Sequencer:
                             if not event.cancelled:
                                 events.append(event)
                         else:
-                            self._alarm.reschedule(next_time)
+                            self._event_alarm.reschedule(next_time)
                             break
                     # TODO tween processing
                     if len(events) == 0 and len(self._tweens) == 0:
@@ -465,13 +465,17 @@ class Sequencer:
                                 # Passing the tracker but with input lock acquired to make all changes
                                 # to the input report happen atomically.
                                 tw.generate_input(self._tracker, current_time)
-                        # Clean up expired tweens and mark the channel as free (is needed)
+                        # Clean up expired tweens and mark the channel as free (if needed)
                         for tw in expired_tweens:
                             self._tweens.remove(tw)
                             ch = self._TWEEN_TRACKER_TO_CHANNEL[type(tw)]
                             if ch in self._end_of_chain_tween_channels:
                                 del self._holding[ch]
                                 self._end_of_chain_tween_channels.remove(ch)
+                        if len(self._tweens) > 0:
+                            self._tween_alarm.reschedule(current_time + self._tick_interval)
+                        else:
+                            self._tween_alarm.cancel()
 
         except Exception:
             logger.exception('Unhandled exception in tick thread.')
@@ -481,7 +485,7 @@ class Sequencer:
             logger.debug('Sequencer tick thread stopped.')
 
     def _reschedule_alarm(self):
-        self._alarm.reschedule(self._event_queue_new.peek().at)
+        self._event_alarm.reschedule(self._event_queue_new.peek().at)
 
     def start(self) -> None:
         '''
@@ -497,11 +501,18 @@ class Sequencer:
             self._tick_thread.start()
 
         try:
-            self._alarm.start()
+            self._event_alarm.start()
         except RuntimeError:
-            logger.debug('Attempting to restart the sequencer alarm thread.')
-            self._alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._alarm')
-            self._alarm.start()
+            logger.debug('Attempting to restart the sequencer event alarm thread.')
+            self._event_alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._alarm')
+            self._event_alarm.start()
+
+        try:
+            self._tween_alarm.start()
+        except RuntimeError:
+            logger.debug('Attempting to restart the sequencer tween alarm thread.')
+            self._tween_alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._alarm')
+            self._tween_alarm.start()
 
     def shutdown(self) -> None:
         '''
@@ -511,9 +522,11 @@ class Sequencer:
         with self._mutex:
             self._shutdown_flag = True
             self._wakeup_cond.notify_all()
-            self._alarm.stop()
+            self._event_alarm.stop()
+            self._tween_alarm.stop()
         self._tick_thread.join()
-        self._alarm.join()
+        self._event_alarm.join()
+        self._tween_alarm.join()
 
     def queue_press_buttons(self, buttons: Set[ButtonType], hold: float = 0.05) -> None:
         '''
