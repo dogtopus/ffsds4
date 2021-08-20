@@ -24,7 +24,6 @@
 Third party PS4 controller emulator based on python-functionfs and its HID example.
 """
 from __future__ import print_function, annotations
-import cProfile
 import ctypes
 import functools
 import errno
@@ -42,6 +41,8 @@ from functionfs.gadget import (
 from typing import Optional
 
 from . import ds4
+
+import yappi
 
 logger = logging.getLogger('ffsds4.manager')
 
@@ -90,15 +91,12 @@ class DS4Function(functionfs.HIDFunction):
     """
     Third party PS4 controller function.
     """
-    _profile: Optional[cProfile.Profile]
     _profile_file: Optional[str]
     def __init__(self, ds4key_path: str, turbo: bool = False, aligned: bool = False, profile: Optional[str]=None, **kw) -> None:
         if profile is not None:
-            self._profile = cProfile.Profile()
             self._profile_file = profile
-            self._profile.enable()
+            yappi.start()
         else:
-            self._profile = None
             self._profile_file = None
 
         super().__init__(
@@ -133,11 +131,12 @@ class DS4Function(functionfs.HIDFunction):
         self.console_task.start()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if self._profile is not None:
+        if self._profile_file is not None:
             try:
                 logger.debug('Dumping profile...')
-                self._profile.disable()
-                self._profile.dump_stats(self._profile_file)
+                yappi.stop()
+                pstats = yappi.convert2pstats(yappi.get_func_stats())
+                pstats.dump_stats(self._profile_file)
             finally:
                 super().__exit__(exc_type, exc_value, traceback)
 
