@@ -675,10 +675,67 @@ class Sequencer:
     def release_dpad(self):
         self.hold_release_dpad(DPadPosition.neutral)
 
-    def hold_stick(self, left: Tuple[float, float], right: Tuple[float, float], unit: StickCoordUnit = 'cartesian') -> None:
+    def push_stick(self, left: Optional[Tuple[float, float]] = None, right: Optional[Tuple[float, float]] = None, unit: StickCoordUnit = 'cartesian', tween_duration: float = 0.025, hold: float = 0.05) -> None:
+        start_time = time.monotonic()
+        center_lx: float
+        center_ly: float
+        center_rx: float
+        center_ry: float
+        if unit == 'raw':
+            center_lx = center_rx = center_ly = center_ry = 0x80
+        elif unit == 'cartesian':
+            center_lx = center_rx = center_ly = center_ry = 0
+        elif unit == 'polar':
+            center_lx = center_rx = 0
+            center_ly = 0 if left is None else left[1]
+            center_ry = 0 if right is None else right[1]
+        else:
+            raise ValueError(f'Unknown unit "{unit}"')
+
+        left_tween: Optional[Tuple[LinearTween, LinearTween]] = None
+        right_tween: Optional[Tuple[LinearTween, LinearTween]] = None
+        left_tween_release: Optional[Tuple[LinearTween, LinearTween]] = None
+        right_tween_release: Optional[Tuple[LinearTween, LinearTween]] = None
+
+        if left is not None:
+            left_tween = (
+                LinearTween(start_time, tween_duration, (center_lx, left[0])),
+                LinearTween(start_time, tween_duration, (center_ly, left[1])),
+            )
+            left_tween_release = (
+                LinearTween(start_time + tween_duration + hold, tween_duration, (left[0], center_lx)),
+                LinearTween(start_time + tween_duration + hold, tween_duration, (left[1], center_ly)),
+            )
+        if right is not None:
+            right_tween = (
+                LinearTween(start_time, tween_duration, (center_rx, right[0])),
+                LinearTween(start_time, tween_duration, (center_ry, right[1])),
+            )
+            right_tween_release = (
+                LinearTween(start_time + tween_duration + hold, tween_duration, (right[0], center_rx)),
+                LinearTween(start_time + tween_duration + hold, tween_duration, (right[1], center_ry)),
+            )
+
+        tween_push = StickTweenTracker(unit, left_tween, right_tween)
+        tween_release = StickTweenTracker(unit, left_tween_release, right_tween_release)
+        with self._mutex:
+            # TODO insert reset
+            event = ControllerEvent.make_and_register_event_chain(self._event_queue_new, start_time, (
+                EventChainNode(0, tween_push, (NonbinaryInputTarget.sticks, None)),
+                EventChainNode(tween_duration + hold, tween_release, (NonbinaryInputTarget.sticks, None)),
+            ))
+            assert event is not None
+            self._holding[(NonbinaryInputTarget.sticks, None)] = event
+
+        self._reschedule_alarm()
+
+    def hold_stick(self, left: Optional[Tuple[float, float]] = None, right: Optional[Tuple[float, float]] = None, unit: StickCoordUnit = 'cartesian') -> None:
         with self._tracker.start_modify_report() as report, self._mutex:
             #self._cancel_sticks()
-            report.set_stick(stick_to_native(left, unit), stick_to_native(right, unit))
+            report.set_stick(
+                stick_to_native(left, unit) if left is not None else None,
+                stick_to_native(right, unit) if right is not None else None
+            )
 
     def release_stick(self):
         with self._tracker.start_modify_report() as report, self._mutex:

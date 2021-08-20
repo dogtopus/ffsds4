@@ -15,7 +15,16 @@ import threading
 import os
 import shlex
 import signal
-from typing import Iterator, TYPE_CHECKING, Optional, Callable, Sequence, Set, Tuple
+from typing import (
+    Iterator,
+    TYPE_CHECKING,
+    Optional,
+    Callable,
+    Sequence,
+    Set,
+    Tuple,
+    cast,
+)
 
 import functionfs.gadget
 import sty
@@ -32,6 +41,9 @@ ConsoleArgparseDoMethod = Callable[['Console', argparse.Namespace], Optional[boo
 
 BARS = '▁▂▃▄▅▆▇█'
 
+def csfloat(value: str) -> Tuple[float, ...]:
+    return tuple(map(float, map(str.strip, value.split(','))))
+
 def create_parser() -> argparse.ArgumentParser:
     button_choices = tuple(item.name for item in ds4.ButtonType) + tuple(f'd:{item.name}' for item in ds4.DPadPosition)
 
@@ -39,7 +51,7 @@ def create_parser() -> argparse.ArgumentParser:
     sps = p.add_subparsers(dest='cmd', help='Command.')
 
     sp = sps.add_parser('press', help='Press the specified buttons.')
-    sp.add_argument('-t', '--hold-time', type=float, help='Time to hold the buttons.')
+    sp.add_argument('-t', '--hold-time', type=float, default=0.05, help='Time to hold the buttons.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to press.')
 
     sp = sps.add_parser('hold', help='Press and hold a button indefinitely.')
@@ -48,15 +60,23 @@ def create_parser() -> argparse.ArgumentParser:
     sp = sps.add_parser('release', help='Unconditionally release previously held buttons.')
     sp.add_argument('buttons', metavar='button', nargs='+', choices=button_choices, help='Buttons to hold.')
 
+    sp = sps.add_parser('stick_push', help='Set stick position.')
+    mxg = sp.add_mutually_exclusive_group()
+    mxg.add_argument('-C', '--cartesian', action='store_const', dest='unit', const='cartesian', default='cartesian', help='Use cartesian coordinates. The values must be in the range of (-1, 1) (default).')
+    mxg.add_argument('-P', '--polar', action='store_const', dest='unit', const='polar', help='Use polar coordinates The values must be in the range of ((-1, 1), (0, 360)).')
+    mxg.add_argument('-R', '--raw', action='store_const', dest='unit', const='raw', help='Use raw coordinates. The values must be in the range of (0, 256).')
+    sp.add_argument('-t', '--hold-time', type=float, default=0.05, help='Time to hold the sticks.')
+    sp.add_argument('-d', '--tween-duration', type=float, default=0.025, help='Duration of the tween animation.')
+    sp.add_argument('-l', '--left', type=csfloat, help='Value pair for left stick.')
+    sp.add_argument('-r', '--right', type=csfloat, help='Value pair for right stick.')
+
     sp = sps.add_parser('stick_set', help='Set stick position.')
     mxg = sp.add_mutually_exclusive_group()
-    mxg.add_argument('-c', '--cartesian', action='store_const', dest='unit', const='cartesian', default='cartesian', help='Use cartesian coordinates. The values must be in the range of (-1, 1) (default).')
-    mxg.add_argument('-p', '--polar', action='store_const', dest='unit', const='polar', help='Use polar coordinates The values must be in the range of ((-1, 1), (0, 360)).')
-    mxg.add_argument('-r', '--raw', action='store_const', dest='unit', const='raw', help='Use raw coordinates. The values must be in the range of (0, 256).')
-    sp.add_argument('lx', type=float, help='Left X.')
-    sp.add_argument('ly', type=float, help='Left Y.')
-    sp.add_argument('rx', type=float, help='Right X.')
-    sp.add_argument('ry', type=float, help='Right Y.')
+    mxg.add_argument('-C', '--cartesian', action='store_const', dest='unit', const='cartesian', default='cartesian', help='Use cartesian coordinates. The values must be in the range of (-1, 1) (default).')
+    mxg.add_argument('-P', '--polar', action='store_const', dest='unit', const='polar', help='Use polar coordinates The values must be in the range of ((-1, 1), (0, 360)).')
+    mxg.add_argument('-R', '--raw', action='store_const', dest='unit', const='raw', help='Use raw coordinates. The values must be in the range of (0, 256).')
+    sp.add_argument('-l', '--left', type=csfloat, help='Value pair for left stick.')
+    sp.add_argument('-r', '--right', type=csfloat, help='Value pair for right stick.')
 
     sp = sps.add_parser('stick_release', help='Release all sticks.')
 
@@ -153,15 +173,12 @@ class Console(cmd.Cmd):
     @wait_for_connect
     @use_argparse('press')
     def do_press(self, args: argparse.Namespace):
-        hold_time: Optional[float]
-        hold_time = args.hold_time
-
         buttons, dpad_pos = self._parse_button_type(args.buttons)
 
         if dpad_pos is not None:
-            self._sequencer.queue_press_dpad(dpad_pos, hold_time if hold_time is not None else 0.05)
+            self._sequencer.queue_press_dpad(dpad_pos, args.hold_time)
         if len(buttons) != 0:
-            self._sequencer.queue_press_buttons(buttons, hold_time if hold_time is not None else 0.05)
+            self._sequencer.queue_press_buttons(buttons, args.hold_time)
 
     @wait_for_connect
     @use_argparse('hold')
@@ -184,9 +201,22 @@ class Console(cmd.Cmd):
             self._sequencer.release_buttons(buttons)
 
     @wait_for_connect
+    @use_argparse('stick_push')
+    def do_stick_push(self, args: argparse.Namespace):
+        if args.left is not None and len(args.left) != 2:
+            self._parser.error('Left stick value pair must contain exactly 2 numbers.')
+        if args.right is not None and len(args.right) != 2:
+            self._parser.error('Right stick value pair must contain exactly 2 numbers.')
+        self._sequencer.push_stick(cast(Optional[Tuple[float, float]], args.left), cast(Optional[Tuple[float, float]], args.right), unit=args.unit, tween_duration=args.tween_duration, hold=args.hold_time)
+
+    @wait_for_connect
     @use_argparse('stick_set')
     def do_stick_set(self, args: argparse.Namespace):
-        self._sequencer.hold_stick((args.lx, args.ly), (args.rx, args.ry), unit=args.unit)
+        if args.left is not None and len(args.left) != 2:
+            self._parser.error('Left stick value pair must contain exactly 2 numbers.')
+        if args.right is not None and len(args.right) != 2:
+            self._parser.error('Right stick value pair must contain exactly 2 numbers.')
+        self._sequencer.hold_stick(cast(Tuple[float, float], args.left), cast(Tuple[float, float], args.right), unit=args.unit)
 
     @wait_for_connect
     @use_argparse('stick_release')
