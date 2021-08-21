@@ -421,74 +421,106 @@ class Sequencer:
         self._tween_alarm = ReschedulableAlarm(self._on_alarm, name='Sequencer._tween_alarm')
 
     def _on_alarm(self) -> None:
+        # Wake up the event processor thread and process events.
         with self._mutex:
             self._wakeup_cond.notify_all()
+
+    def _apply_oneshot_events(self, report: InputReport, events: MutableSequence[ControllerEvent]) -> None:
+        for ev in events:
+            ev_on_type, ev_on_id = ev.target
+            if ev_on_type == ButtonType:
+                # This is guaranteed to be button type
+                report.set_button(cast(ButtonType, ev_on_id), ev.op == SingleShotEventType.press)
+            elif ev_on_type == DPadPosition:
+                # Similar here
+                report.set_dpad(DPadPosition.neutral if ev.op == SingleShotEventType.release else cast(DPadPosition, ev_on_id))
+            # Tweens - moved upwards
+            assert not isinstance(ev_on_type, NonbinaryInputTarget)
+            if ev.next_ is None:
+                del self._holding[ev.target_channel_id]
+
+    def _apply_nonbinary_events(self) -> Tuple[float, List[BaseTweenTracker]]:
+        current_time = time.monotonic()
+        expired_tweens: List[BaseTweenTracker] = []
+        for tw in self._tweens:
+            # check expiry
+            if tw.isexpired(current_time):
+                expired_tweens.append(tw)
+                # TODO how do we reset the reports?
+            else:
+                # Passing the tracker but with input lock acquired to make all changes
+                # to the input report happen atomically.
+                tw.generate_input(self._tracker, current_time)
+        return current_time, expired_tweens
+
+    def _cleanup_nonbinary_events(self, nonbinary_events_last_applied: float, expired_tweens: Sequence[BaseTweenTracker]) -> None:
+        # Clean up expired tweens and mark the channel as free (if needed)
+        for tw in expired_tweens:
+            self._tweens.remove(tw)
+            logger.debug('Tween %s unregistered due to expiration.', repr(tw))
+            ch = self._TWEEN_TRACKER_TO_CHANNEL[type(tw)]
+            if ch in self._end_of_chain_tween_channels:
+                del self._holding[ch]
+                self._end_of_chain_tween_channels.remove(ch)
+                logger.debug('Channel %s freed.', str(ch))
+        if len(self._tweens) > 0:
+            self._tween_alarm.reschedule(nonbinary_events_last_applied + self._tick_interval)
+        else:
+            self._tween_alarm.cancel()
+
+    def _process_events_nolock(self):
+        events: List[ControllerEvent] = []
+        new_tween_regstered = False
+        while len(self._event_queue_new) != 0:
+            current_time = time.monotonic()
+            # peek
+            next_time = self._event_queue_new.peek().at
+            if current_time >= next_time:
+                event: ControllerEvent = self._event_queue_new.pop()
+                # Tweens
+                if (not event.cancelled) and isinstance(event.target[0], NonbinaryInputTarget):
+                    assert isinstance(event.op, BaseTweenTracker)
+                    self._tweens.append(event.op)
+                    new_tween_regstered = True
+                    logger.debug('Tween %s registered.', repr(event.op))
+                    if event.next_ is None:
+                        # Defer the channel freeing if it's driven by a tween
+                        self._end_of_chain_tween_channels.add(event.target_channel_id)
+                        logger.debug('Tween %s is end of chain.', repr(event.op))
+                # Regular event, collect it for further processing
+                elif not event.cancelled:
+                    events.append(event)
+            # Stop duplicated rescheduling since apparently it's pretty expensive to do so (can we prevent this by design?)
+            elif len(events) != 0 or new_tween_regstered:
+                self._event_alarm.reschedule(next_time)
+                break
+            else:
+                break
+
+        if len(events) == 0 and len(self._tweens) == 0:
+            return
+
+        if len(events) != 0:
+            logger.debug('%d events collected', len(events))
+
+        expired_tweens: Optional[Sequence[BaseTweenTracker]] = None
+
+        with self._tracker.start_modify_report() as report:
+            self._apply_oneshot_events(report, events)
+            if len(self._tweens) != 0:
+                current_time, expired_tweens = self._apply_nonbinary_events()
+
+        if expired_tweens is not None:
+            self._cleanup_nonbinary_events(current_time, expired_tweens)
 
     def _tick(self) -> None:
         logger.debug('Sequencer tick thread started.')
         try:
             while not self._shutdown_flag:
-                events: MutableSequence[ControllerEvent] = []
                 with self._mutex:
                     # Suspend until received wake up request.
                     self._wakeup_cond.wait()
-                    while len(self._event_queue_new) != 0:
-                        current_time = time.monotonic()
-                        # peek
-                        next_time = self._event_queue_new.peek().at
-                        if current_time >= next_time:
-                            event = self._event_queue_new.pop()
-                            if not event.cancelled:
-                                events.append(event)
-                        else:
-                            self._event_alarm.reschedule(next_time)
-                            break
-                    # TODO tween processing
-                    if len(events) == 0 and len(self._tweens) == 0:
-                        continue
-                    logger.debug('%d events collected', len(events))
-                    with self._tracker.start_modify_report() as report:
-                        for ev in events:
-                            ev_on_type, ev_on_id = ev.target
-                            if ev_on_type == ButtonType:
-                                # This is guaranteed to be button type
-                                report.set_button(cast(ButtonType, ev_on_id), ev.op == SingleShotEventType.press)
-                            elif ev_on_type == DPadPosition:
-                                # Similar here
-                                report.set_dpad(DPadPosition.neutral if ev.op == SingleShotEventType.release else cast(DPadPosition, ev_on_id))
-                            # Tweens
-                            elif isinstance(ev_on_type, NonbinaryInputTarget) and isinstance(ev.op, BaseTweenTracker):
-                                self._tweens.append(ev.op)
-                            if ev.next_ is None:
-                                # Defer the channel freeing if it's driven by a tween
-                                if isinstance(ev_on_type, NonbinaryInputTarget):
-                                    self._end_of_chain_tween_channels.add(ev.target_channel_id)
-                                else:
-                                    del self._holding[ev.target_channel_id]
-
-                        current_time = time.monotonic()
-                        expired_tweens: List[BaseTweenTracker] = []
-                        for tw in self._tweens:
-                            # check expiry
-                            if tw.isexpired(current_time):
-                                expired_tweens.append(tw)
-                                # TODO how do we reset the reports?
-                            else:
-                                # Passing the tracker but with input lock acquired to make all changes
-                                # to the input report happen atomically.
-                                tw.generate_input(self._tracker, current_time)
-                        # Clean up expired tweens and mark the channel as free (if needed)
-                        for tw in expired_tweens:
-                            self._tweens.remove(tw)
-                            ch = self._TWEEN_TRACKER_TO_CHANNEL[type(tw)]
-                            if ch in self._end_of_chain_tween_channels:
-                                del self._holding[ch]
-                                self._end_of_chain_tween_channels.remove(ch)
-                        if len(self._tweens) > 0:
-                            self._tween_alarm.reschedule(current_time + self._tick_interval)
-                        else:
-                            self._tween_alarm.cancel()
-
+                    self._process_events_nolock()
         except Exception:
             logger.exception('Unhandled exception in tick thread.')
             self._shutdown_flag = True
