@@ -31,9 +31,9 @@
         },
         "libaio": {
             "hashes": [
-                "sha256:69dca40e27a8815925d98144c1620798f071740a260e24de53f7a358b6ae9d2d"
+                "sha256:a2ba7844ad1a4d32a947fb960c539779332bbe630019c246182d03f72c3d275b"
             ],
-            "version": "==0.8.2"
+            "version": "==0.8.3"
         },
         "pycryptodomex": {
             "hashes": [
@@ -73,10 +73,10 @@
         },
         "sty": {
             "hashes": [
-                "sha256:52bc299ba08a7e2683ed4500a13222d62811ad616e621c9d3e3da2d8175ae46c"
+                "sha256:d811703ff450170b08fe4410caf052d6139df8d9e1d8f35694c212e14ffe5851"
             ],
             "index": "pypi",
-            "version": "==1.0.0rc1"
+            "version": "==1.0.0rc2"
         },
         "yappi": {
             "hashes": [
@@ -196,10 +196,10 @@
         },
         "pyinstaller-hooks-contrib": {
             "hashes": [
-                "sha256:57964f93eb69255c49159ffdf052aae893feed223b0f69773dfd010ca6c569d9",
-                "sha256:7f5d0689b30da3092149fc536a835a94045ac8c9f0e6dfb23ac171890f5ea8f2"
+                "sha256:169b09802a19f83593114821d6ba0416a05c7071ef0ca394f7bfb7e2c0c916c8",
+                "sha256:a52bc3834281266bbf77239cfc9521923336ca622f44f90924546ed6c6d3ad5e"
             ],
-            "version": "==2021.2"
+            "version": "==2021.3"
         },
         "pylint": {
             "hashes": [
@@ -289,11 +289,11 @@
         },
         "typing-extensions": {
             "hashes": [
-                "sha256:0ac0f89795dd19de6b97debb0c6af1c70987fd80a2d62d1958f7e56fcc31b497",
-                "sha256:50b6f157849174217d0656f99dc82fe932884fb250826c18350e159ec6cdf342",
-                "sha256:779383f6086d90c99ae41cf0ff39aac8a7937a9283ce0a414e5dd782f4c94a84"
+                "sha256:045dd532231acfa03628df5e0c66dba64e2cc8fc8b844538d4ad6d5dd6cb82dc",
+                "sha256:83af6730a045fda60f46510f7f1f094776d90321caa4d97d20ef38871bef4bd3",
+                "sha256:8bbffbd37fbeb9747a0241fdfde5ae99d4531ad1d1a41ccaea62100e15a5814c"
             ],
-            "version": "==3.10.0.0"
+            "version": "==3.10.0.1"
         },
         "wrapt": {
             "hashes": [
