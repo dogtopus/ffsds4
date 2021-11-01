@@ -18,10 +18,10 @@
     "default": {
         "functionfs": {
             "hashes": [
-                "sha256:e5a5d892422f078451d515892f54327e0e38851a0ee4a725f19f81f421e66965"
+                "sha256:173990de4f9cc1ce916c36efb6e8c90022b9a37ac6f68d94229cfe1acbc44830"
             ],
             "index": "pypi",
-            "version": "==0.6.0"
+            "version": "==0.8.0"
         },
         "ioctl-opt": {
             "hashes": [
@@ -31,9 +31,9 @@
         },
         "libaio": {
             "hashes": [
-                "sha256:a2ba7844ad1a4d32a947fb960c539779332bbe630019c246182d03f72c3d275b"
+                "sha256:9ee293a95ee56568b714922c2308878474b4ea9d05e7f4ba1e5e49873494b95d"
             ],
-            "version": "==0.8.3"
+            "version": "==0.9.1"
         },
         "pycryptodomex": {
             "hashes": [
