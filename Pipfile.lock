@@ -18,10 +18,10 @@
     "default": {
         "functionfs": {
             "hashes": [
-                "sha256:173990de4f9cc1ce916c36efb6e8c90022b9a37ac6f68d94229cfe1acbc44830"
+                "sha256:a92468ed7c0f134808dd7dbb88f36e91774db0b6df4fa5d09dca0fb0a1f463c4"
             ],
             "index": "pypi",
-            "version": "==0.8.0"
+            "version": "==0.9.0"
         },
         "ioctl-opt": {
             "hashes": [
