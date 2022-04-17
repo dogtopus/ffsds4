@@ -228,19 +228,19 @@
         },
         "rope": {
             "hashes": [
-                "sha256:edf2ed3c9b35a8814752ffd3ea55b293c791e5087e252461de898e953cf9c146",
-                "sha256:f87662c565086d660fc855cc07f37820267876634c3e9e51bddb32ff51547268"
+                "sha256:16f652d3002296778d463db329da6a05d914a4dbde30ea6da76362da06c0ebb7",
+                "sha256:67749b582d57954f288b0441fae93e8f4c166d7e93fc29c430bd4db28ec904d0"
             ],
             "index": "pypi",
-            "version": "==0.23.0"
+            "version": "==1.0.0"
         },
         "setuptools": {
             "hashes": [
-                "sha256:6221e37dc86fcdc9dad9d9eb2002e9f9798fe4aca1bf18f280e66e50c0eb7fca",
-                "sha256:ad88b13f3dc60420259c9877486908ddad12c7befaff0d624c7190f742abd64f"
+                "sha256:7999cbd87f1b6e1f33bf47efa368b224bed5e27b5ef2c4d46580186cbcb1a86a",
+                "sha256:a65e3802053e99fc64c6b3b29c11132943d5b8c8facbcc461157511546510967"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==61.0.0"
+            "version": "==62.0.0"
         },
         "snakeviz": {
             "hashes": [
