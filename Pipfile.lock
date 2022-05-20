@@ -77,10 +77,10 @@
         },
         "yappi": {
             "hashes": [
-                "sha256:855890cd9a90d833dd2df632d648de8ccd0a4c3131f1edc8abd004db0625b5e8"
+                "sha256:f54c25f04aa7c613633b529bffd14e0699a4363f414dc9c065616fd52064a49b"
             ],
             "index": "pypi",
-            "version": "==1.3.3"
+            "version": "==1.3.5"
         }
     },
     "develop": {
@@ -236,11 +236,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:28c79c24d83c42a5e6d6cc711e5e9a6c1b89326229feaa5807fc277040658600",
-                "sha256:588ffd1dc6e20e9f4f7057aa9873fcdc26e0270362602735d32476bad67d82c5"
+                "sha256:68e45d17c9281ba25dc0104eadd2647172b3472d9e01f911efa57965e8d51a36",
+                "sha256:a43bdedf853c670e5fed28e5623403bad2f73cf02f9a2774e91def6bda8265a7"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==62.3.1"
+            "version": "==62.3.2"
         },
         "snakeviz": {
             "hashes": [
