@@ -80,10 +80,45 @@
         },
         "yappi": {
             "hashes": [
-                "sha256:f54c25f04aa7c613633b529bffd14e0699a4363f414dc9c065616fd52064a49b"
+                "sha256:07c50013b2435f53ea34dd35e74db4a172e52ae6b9a866d79d22805c9fdf65c4",
+                "sha256:0a73c608a2603570a020a32d4369ba744012bc5267f37e5bd8026fb491abba56",
+                "sha256:0cd3d5d0ad6c4172b9de5a67af80f0320e31700e020e0ce91bbec8e7ca558c8c",
+                "sha256:0e55f3f7a7be76d70f60f71530ad0db83afd1284bf4a6fa8d69af56a1533f624",
+                "sha256:1b712ea0d38ffbb985463ea644cbce210fe9f84f47180470c7981764838db7b1",
+                "sha256:22c567a6983f76317e128a0e669be7afb3e7c02654b8e4d76c3b4c3acef008e9",
+                "sha256:29815ea0107f25ac1be75c44515c66a5fd6ebd7131c640003292c8226c919b77",
+                "sha256:4d774b343b7f87f4a563f6f919c511a3bb6d20a66da66306568f0cf305e9c54e",
+                "sha256:57bc0d2fc86cf5ade040042f193dd04df67646d3416317625efcee78e13c6fc7",
+                "sha256:5aac25c46acd8f320fc19b4a6f86c966a106c9ad5736e436ed3d99ae436d13a3",
+                "sha256:6bd470bdf49c26fdeecf85336b70afd194382834ae52f6dab972b57de8f86f6c",
+                "sha256:84241b3a5022e721b1595582097aa7f3fa0b1a560dc75bc6d9c6fe535b964971",
+                "sha256:8482861bcd9b7530c017067d8f6a21a9c1d26ca787dc5e6b716eb57314af449a",
+                "sha256:8819c2b8dc094edf2e3f1a7ef424a628a0547f42b1bc536a43dd223b7753c86c",
+                "sha256:8bfd6f38768a84f6c12af6087a6aec0d1fec2d9c0fc65136cf074ef494b25811",
+                "sha256:8efb1630e1a8ebaeee5dcd08f58a1397a98e91241dde1e3c5ffd89bc1aa293b2",
+                "sha256:95b8ee6b8718527e480be6366fd86b6bbac51ff8ae3f5dd2a54be60ab28c7e65",
+                "sha256:97d1edc0cf2212d0ebfffd06fd7aee0d17d280216e8f4fe320eb0436187f14e5",
+                "sha256:9f048e86e426b84357c86975c195598a7412d550c3df5f9b904ea00c57fe2548",
+                "sha256:a24e30018ee2aec0e53a4edd7847d726ab5d2c2152d8eaa014739dca355dbe83",
+                "sha256:b0916e90cbfe17c6e8dd82d7c04f7d628a3a09f15f1d28fd239096daa7347cca",
+                "sha256:b639a0788a8d8fd566a5a03bd2ce769acc42ddee3256287d57adb76dde7134c8",
+                "sha256:ba5b59978795f77ee337a03a16f6685d914390c7857375e1b98746e75ec9ae6f",
+                "sha256:bcef9571559729a76d2245d0fc406a4fad60d32bfa4e4e5e124096e27e98922b",
+                "sha256:bfbeaca9e1a41cb1eabe1b7897b8fb236e85889c502654bded7c6628bd7bb2f7",
+                "sha256:c2d954a63c1806c906fefb2304902c71bfeeb76ec30af53cc164cb747c9e64ec",
+                "sha256:c7bf348067bb54f9cbb47a395b7be10fa6e42c214304668fc822da8998be46b4",
+                "sha256:d3bb721d956bf62ffe7d8f5a37037c8bd10c9217d9bd783641367341ca57e290",
+                "sha256:d5aefd0728e80cae3cb325a67d413b90cd998ea97f274ade0ff45279ca40a8d6",
+                "sha256:de5c84fc12652578dda9c8acabb985c672a1f0c7e0f27e974f0ce991610d0049",
+                "sha256:e159395a0a7cca4963de96155928e3f682bfbea40325bf33a22f422aa0c8a13c",
+                "sha256:e51750f86defe1f9690f2cdae759768ad536356062c47d22edfab889fb12a041",
+                "sha256:efb7e510e6c3028bf71888faea226dca9eaf60b445727ad50ddb8b5e2ff2af46",
+                "sha256:f583403948513583886f479d7a3886e96b135650c516308d7011af2e60829539",
+                "sha256:fac50de9a9edf8566e571e44cfb646ae57defd81b9ea807a94b939cbd895e4ab",
+                "sha256:fbca637b111d4a3085376c80e9b671ecbad420574f942aa10fd93cbfa804d36f"
             ],
             "index": "pypi",
-            "version": "==1.3.5"
+            "version": "==1.3.6"
         }
     },
     "develop": {
@@ -280,11 +315,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:273b6847ae61f7829c1affcdd9a32f67aa65233be508f4fbaab866c5faa4e408",
-                "sha256:d5340d16943a0f67057329db59b564e938bb3736c6e50ae16ea84d5e5d9ba6d0"
+                "sha256:d36f579e989a90e8106b9061599c707d912e9cd296b30d62cb6b4dd3567a5ddc",
+                "sha256:db49784825568c9340e45e3322b8b8aed4ca598ce9bbf5277dcae95cc04dc469"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==63.3.0"
+            "version": "==63.4.0"
         },
         "snakeviz": {
             "hashes": [
