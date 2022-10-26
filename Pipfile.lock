@@ -259,20 +259,20 @@
         },
         "pyinstaller": {
             "hashes": [
-                "sha256:0458585457d458abe9eafd0c4c4289054448349f2a2b2a7fcf876a4796a99a53",
-                "sha256:1eca0a42088580880ade5dca45fca81cbbb18e65ceb90684d57e6ceb699b013b",
-                "sha256:2a0455e4cc4d54ff760f99fb6194ab68862d3552e970740a2dfa36edbc05251b",
-                "sha256:3c980d673a29f2a7f8194497bcb91bf17a649f481590727952f1b583859324bd",
-                "sha256:692c479f679f4cc4f41a6a6ef4742176ca1f62338e5a3318601cf62d60cd0832",
-                "sha256:72830fa5d2702bb7c1af5e2d55467e0c0c89738fc302f49870ed273ec494371f",
-                "sha256:76bc9f87f256427a578eda27916d85acb291a292ca631326f4b22f623bd0d391",
-                "sha256:9e2138877321211cbf302f6fb930614aa2070ccf01b97ef4d4ed9e219c57b3b6",
-                "sha256:bccacd5f14ebd2cd3a34ffc9c9dc31feef72c077acf06be4035d5153d24f782b",
-                "sha256:d76de14a8b8370d47d69fab92c098299eac38a99ce603ddc3a42bd5681dfcaff",
-                "sha256:dca5625bccf8c98bb2a1e2760022de2f1a1a1be8744182fd3e640bc7bae75e30"
+                "sha256:0465edb7a5b2bc74ac983d419fd980fd2e4c7d49f4c013edd4befb6ca70d3c2b",
+                "sha256:14a0bb008966ba074e173f94b5bffd78a4d84e4a21fafc63c1b72851a40a918d",
+                "sha256:2abb74b008f01a8d9b54c27ea51aa6d59ea6137d507de9d580f79b934e0ca7b8",
+                "sha256:556750250bba85cf7ede168994fe70fcdeeba8d22f51eaedfd94b3efb6faa6ce",
+                "sha256:8c423556f0aac7651cda813db0d215c36c51717c4079e407136a4d9f730d38b0",
+                "sha256:a64a5472ee36f63e773be63535817b6d8aea1c1cf9acd18858c22c66fe575043",
+                "sha256:a7fac3fa8f75bce2839e0ab910baf0e935ff2b5f327c32aedade563e1b610967",
+                "sha256:b8dc59b00bc09053ed0476b47423373fafb8f4d57618e9eff7047cda8942e1c4",
+                "sha256:bb3faba1a29686e1c2d71a939bc6d1a57ca218d6968f43620591df42058635e0",
+                "sha256:ec9d9491681ac55e369a5226833694bf299ddeaeab6df4ef9d44758d4342f10a",
+                "sha256:fc734eb91e08c75fc7505170d765a49d781dad9e49dd641ebe4f8a82782f0be2"
             ],
             "index": "pypi",
-            "version": "==5.6"
+            "version": "==5.6.1"
         },
         "pyinstaller-hooks-contrib": {
             "hashes": [
