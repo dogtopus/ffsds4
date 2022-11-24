@@ -18,10 +18,10 @@
     "default": {
         "functionfs": {
             "hashes": [
-                "sha256:a92468ed7c0f134808dd7dbb88f36e91774db0b6df4fa5d09dca0fb0a1f463c4"
+                "sha256:681332cde8f2c2e48b24699237d0e6a54ef30df2a4c5d3c9590126e7b18b148e"
             ],
             "index": "pypi",
-            "version": "==0.9.0"
+            "version": "==0.9.1"
         },
         "ioctl-opt": {
             "hashes": [
@@ -321,11 +321,11 @@
         },
         "setuptools": {
             "hashes": [
-                "sha256:6211d2f5eddad8757bd0484923ca7c0a6302ebc4ab32ea5e94357176e0ca0840",
-                "sha256:d1eebf881c6114e51df1664bc2c9133d022f78d12d5f4f665b9191f084e2862d"
+                "sha256:57f6f22bde4e042978bcd50176fdb381d7c21a9efa4041202288d3737a0c6a54",
+                "sha256:a7620757bf984b58deaf32fc8a4577a9bbc0850cf92c20e1ce41c38c19e5fb75"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==65.6.0"
+            "version": "==65.6.3"
         },
         "snakeviz": {
             "hashes": [
