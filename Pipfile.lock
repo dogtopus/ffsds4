@@ -37,6 +37,7 @@
         },
         "pycryptodomex": {
             "hashes": [
+                "sha256:04a5d6a17560e987272fc1763e9772a87689a08427b8cbdebe3ca7cba95d6156",
                 "sha256:04cc393045a8f19dd110c975e30f38ed7ab3faf21ede415ea67afebd95a22380",
                 "sha256:0776bfaf2c48154ab54ea45392847c1283d2fcf64e232e85565f858baedfc1fa",
                 "sha256:0fadb9f7fa3150577800eef35f62a8a24b9ddf1563ff060d9bd3af22d3952c8c",
@@ -53,7 +54,9 @@
                 "sha256:67e1e6a92151023ccdfcfbc0afb3314ad30080793b4c27956ea06ab1fb9bcd8a",
                 "sha256:6f5b6ba8aefd624834bc177a2ac292734996bb030f9d1b388e7504103b6fcddf",
                 "sha256:7341f1bb2dadb0d1a0047f34c3a58208a92423cdbd3244d998e4b28df5eac0ed",
+                "sha256:781efd04ea6762bb2ef7d4fa632c9c89895433744b6c345bd0c239d5ab058dfc",
                 "sha256:78d9621cf0ea35abf2d38fa2ca6d0634eab6c991a78373498ab149953787e5e5",
+                "sha256:7db44039cc8b449bd08ab338a074e87093bd170f1a1b76d2fcef8a3e2ee11199",
                 "sha256:8eecdf9cdc7343001d047f951b9cc805cd68cb6cd77b20ea46af5bffc5bd3dfb",
                 "sha256:94c7b60e1f52e1a87715571327baea0733708ab4723346598beca4a3b6879794",
                 "sha256:996e1ba717077ce1e6d4849af7a1426f38b07b3d173b879e27d5e26d2e958beb",
@@ -313,11 +316,11 @@
         },
         "rope": {
             "hashes": [
-                "sha256:32a19332df0e40c14092ae35226c3d1f0c15ee2462ca2ce4b9936b8fd45f100d",
-                "sha256:45744d125f7db569b118ed487f08ab72f67fbef0b8441d02df2b756121f35942"
+                "sha256:9761758c222df9466f08232bc046d182960ffa881c1c53bca9fafff210e8da7c",
+                "sha256:d0514b3cddb1a9e103a040756fb53674828d73df70282b7d7d783a220b0354d8"
             ],
             "index": "pypi",
-            "version": "==1.5.0"
+            "version": "==1.5.1"
         },
         "setuptools": {
             "hashes": [
