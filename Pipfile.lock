@@ -319,11 +319,11 @@
         },
         "rope": {
             "hashes": [
-                "sha256:2b4c6879422672f13958a6a36f063d1823d3ba9f0af933e7944293a5a33c8afc",
-                "sha256:931aea154365556a7daac01cbcece0c9c118755bfff7c65ab242b69585167eca"
+                "sha256:893dd80ba7077fc9f6f42b0a849372076b70f1d6e405b9f0cc52781ffa0e6890",
+                "sha256:ba39581d0f8dee4ae8b5b5e82e35d03cebad965ccb127b7eaab9755cdc85e85a"
             ],
             "index": "pypi",
-            "version": "==1.6.0"
+            "version": "==1.7.0"
         },
         "setuptools": {
             "hashes": [
