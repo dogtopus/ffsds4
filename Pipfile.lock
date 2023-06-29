@@ -159,7 +159,7 @@
                 "sha256:8bef7dde241278824a6d83f44a544709b065191b95b6e50894bdc722fcba0504",
                 "sha256:f84c2818376e66cf843d497486ea8fed8700b340f308f076c6fb1229dff318b6"
             ],
-            "markers": "python_full_version >= '3.8.0'",
+            "markers": "python_version >= '3.8'",
             "version": "==5.12.0"
         },
         "lazy-object-proxy": {
@@ -288,11 +288,11 @@
         },
         "pyinstaller-hooks-contrib": {
             "hashes": [
-                "sha256:062ad7a1746e1cfc24d3a8c4be4e606fced3b123bda7d419f14fcf7507804b07",
-                "sha256:bb39e1038e3e0972420455e0b39cd9dce73f3d80acaf4bf2b3615fea766ff370"
+                "sha256:9c11197653de9605a81975325a60b9369e9cdc37c009b6aeb0221a57211f9388",
+                "sha256:fc9892e46fa19d05725205413fb21a764f2f6ff1e70ba95322fb02420a665a45"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==2023.3"
+            "version": "==2023.4"
         },
         "pylint": {
             "hashes": [
@@ -315,11 +315,11 @@
         },
         "rope": {
             "hashes": [
-                "sha256:0767424ed40ce237dcf1c1f5088054fef960e5b19f4a0850783a259a3600d7bd",
-                "sha256:3de1d1f1cf2412540c6a150067fe25298175e7c2b72455b6ca8395f61678da82"
+                "sha256:2ed32d72cd2c4395bb1d569e38fd4f15d6080cfadd61b6e5c565fd39e3f677aa",
+                "sha256:f48d708132c0e062b411308732ca13933b976486b4b53d1e804f94ed08d69503"
             ],
             "index": "pypi",
-            "version": "==1.8.0"
+            "version": "==1.9.0"
         },
         "setuptools": {
             "hashes": [
@@ -367,7 +367,7 @@
                 "sha256:c2de14066c4a38b4ecbbcd55c5cc4b5340eb04f1c5e81da7451ef555859c833f",
                 "sha256:c367ab6c0393d71171123ca5515c61ff62fe09024fa6bf299cd1339dc9456829"
             ],
-            "markers": "python_full_version >= '3.8.0'",
+            "markers": "python_version >= '3.8'",
             "version": "==6.3.2"
         },
         "tuna": {
@@ -380,11 +380,11 @@
         },
         "typing-extensions": {
             "hashes": [
-                "sha256:16224afa8cc2b3679dd9e9a1efe719dd2e20a03f0cc2e4cc4c97870ae9622532",
-                "sha256:3c2c2cd887648efa0ea8f8ba4260a1213058e8e4a25a6a6f4e084740b2c858e2"
+                "sha256:5d8c9dac95c27d20df12fb1d97b9793ab8b2af8a3a525e68c80e21060c161771",
+                "sha256:935ccf31549830cda708b42289d44b6f74084d616a00be651601a4f968e77c82"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==4.7.0rc1"
+            "version": "==4.7.0"
         },
         "wrapt": {
             "hashes": [
