@@ -15,7 +15,7 @@ yappi = "^1.4.0"
 
 
 [tool.poetry.group.dev.dependencies]
-pylint = "^3.0.0"
+pylint = "^3.0.1"
 rope = "^1.10.0"
 pyinstaller = "^6.0.0"
 mypy = "^1.5.1"
