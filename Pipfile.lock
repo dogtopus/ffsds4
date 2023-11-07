@@ -278,12 +278,12 @@
         },
         "rope": {
             "hashes": [
-                "sha256:14bfcc7dfea69fa32c53db0667e86e321ef059de555c7f8101a0cb91c8d85a55",
-                "sha256:4e9f06d7296708a8a6518590c49352c99394053d91fde5b1d74c9ffc85c76d5b"
+                "sha256:62c9028353d1f020653bd1b090d659031539842ede6bd65985f86db3d6430932",
+                "sha256:ac0cbdcda5a546e1e56c54976df07ea2cb04c806f65459bc213536c5d1bc073e"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.10.0"
+            "version": "==1.11.0"
         },
         "setuptools": {
             "hashes": [
