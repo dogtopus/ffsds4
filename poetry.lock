@@ -413,12 +413,12 @@ tornado = ">=2.0"
 
 [[package]]
 name = "sty"
-version = "1.0.4"
+version = "1.0.5"
 description = "String styling for your terminal"
 optional = false
-python-versions = "*"
+python-versions = ">=3.7,<4.0"
 files = [
-    {file = "sty-1.0.4-py3-none-any.whl", hash = "sha256:3e3352f05770a37e11c9dfc303cbccb1c6acc13710e15d181cb43be7df89f8ea"},
+    {file = "sty-1.0.5-py3-none-any.whl", hash = "sha256:2022d63893a5458e424dce133368c1a1c6818ae167ee54482f2428a22bc7b403"},
 ]
 
 [[package]]
@@ -532,4 +532,4 @@ test = ["gevent (>=20.6.2)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "d188e3c0757eb6447f21f46db6267ea16be55e00f803ff645cfec704daec1426"
+content-hash = "37266b9b25b1426b9b0448f40ac29e88910d1f0b94d6c501d9de01acb5bc9b8c"
