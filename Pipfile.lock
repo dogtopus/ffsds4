@@ -76,10 +76,11 @@
         },
         "sty": {
             "hashes": [
-                "sha256:3e3352f05770a37e11c9dfc303cbccb1c6acc13710e15d181cb43be7df89f8ea"
+                "sha256:2022d63893a5458e424dce133368c1a1c6818ae167ee54482f2428a22bc7b403"
             ],
             "index": "pypi",
-            "version": "==1.0.4"
+            "markers": "python_version >= '3.7' and python_version < '4.0'",
+            "version": "==1.0.5"
         },
         "yappi": {
             "hashes": [
