@@ -10,7 +10,7 @@ readme = "README.md"
 python = ">=3.11,<3.13"
 functionfs = "^0.9.2"
 pycryptodomex = "^3.19.0"
-sty = "^1.0.5"
+sty = "^1.0.6"
 yappi = "^1.6.0"
 
 
