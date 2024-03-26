@@ -225,11 +225,11 @@
         },
         "packaging": {
             "hashes": [
-                "sha256:048fb0e9405036518eaaf48a55953c750c11e1a1b68e0dd1a9d62ed0c092cfc5",
-                "sha256:8c491190033a9af7e1d931d0b5dacc2ef47509b34dd0de67ed209b5203fc88c7"
+                "sha256:2ddfb553fdf02fb784c234c7ba6ccc288296ceabec964ad2eae3777778130bc5",
+                "sha256:eb82c5e3e56209074766e6885bb04b8c38a0c015d0a30036ebe7ece34c9989e9"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==23.2"
+            "version": "==24.0"
         },
         "platformdirs": {
             "hashes": [
@@ -288,12 +288,12 @@
         },
         "rope": {
             "hashes": [
-                "sha256:01f06624159e6b2ec9b94412d519e8877a19eeabe392f469c36f7236df05d443",
-                "sha256:93a1bb991fbf0426e8d415102d1c092ccc42e826ce9a42c4d61ce53d7786d9d9"
+                "sha256:51437d2decc8806cd5e9dd1fd9c1306a6d9075ecaf78d191af85fc1dfface880",
+                "sha256:b435a0c0971244fdcd8741676a9fae697ae614c20cc36003678a7782f25c0d6c"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.12.0"
+            "version": "==1.13.0"
         },
         "setuptools": {
             "hashes": [
