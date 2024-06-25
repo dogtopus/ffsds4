@@ -18,7 +18,7 @@ yappi = "^1.6.0"
 pylint = "^3.2.3"
 rope = "^1.13.0"
 pyinstaller = "^6.8.0"
-mypy = "^1.9.0"
+mypy = "^1.10.1"
 tuna = "^0.5.11"
 snakeviz = "^2.2.0"
 
