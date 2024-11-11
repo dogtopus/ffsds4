@@ -409,13 +409,13 @@ testing-integration = ["build[virtualenv]", "filelock (>=3.4.0)", "jaraco.envs (
 
 [[package]]
 name = "snakeviz"
-version = "2.2.0"
+version = "2.2.2"
 description = "A web-based viewer for Python profiler output"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.9"
 files = [
-    {file = "snakeviz-2.2.0-py2.py3-none-any.whl", hash = "sha256:569e2d71c47f80a886aa6e70d6405cb6d30aa3520969ad956b06f824c5f02b8e"},
-    {file = "snakeviz-2.2.0.tar.gz", hash = "sha256:7bfd00be7ae147eb4a170a471578e1cd3f41f803238958b6b8efcf2c698a6aa9"},
+    {file = "snakeviz-2.2.2-py3-none-any.whl", hash = "sha256:77e7b9c82f6152edc330040319b97612351cd9b48c706434c535c2df31d10ac5"},
+    {file = "snakeviz-2.2.2.tar.gz", hash = "sha256:08028c6f8e34a032ff14757a38424770abb8662fb2818985aeea0d9bc13a7d83"},
 ]
 
 [package.dependencies]
@@ -550,4 +550,4 @@ test = ["gevent (>=20.6.2)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "eeabf65f1e5639ecc3c69fc1db877ea16291065795b25f10cd7727dd2d40fa10"
+content-hash = "9702242345f5a0a89e747f986d5454787e97f6d72b4bffd1a05a7e951ce8a0da"
