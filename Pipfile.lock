@@ -310,12 +310,12 @@
         },
         "snakeviz": {
             "hashes": [
-                "sha256:569e2d71c47f80a886aa6e70d6405cb6d30aa3520969ad956b06f824c5f02b8e",
-                "sha256:7bfd00be7ae147eb4a170a471578e1cd3f41f803238958b6b8efcf2c698a6aa9"
+                "sha256:08028c6f8e34a032ff14757a38424770abb8662fb2818985aeea0d9bc13a7d83",
+                "sha256:77e7b9c82f6152edc330040319b97612351cd9b48c706434c535c2df31d10ac5"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.7'",
-            "version": "==2.2.0"
+            "markers": "python_version >= '3.9'",
+            "version": "==2.2.2"
         },
         "tomlkit": {
             "hashes": [
@@ -339,7 +339,6 @@
                 "sha256:d9a566c40b89757c9aa8e6f032bcdb8ca8795d7c1a9762910c722b1635c9de4d",
                 "sha256:e2e20b9113cd7293f164dc46fffb13535266e713cdb87bd2d15ddb336e96cfc4"
             ],
-            "index": "pypi",
             "markers": "python_version >= '3.8'",
             "version": "==6.4.1"
         },
